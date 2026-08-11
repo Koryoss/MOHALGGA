@@ -43,7 +43,7 @@ const config: ExpoConfig = {
   slug: env.appSlug,
   version: "1.0.0",
   orientation: "portrait",
-  icon: "./assets/images/whatshallwe-overlap-icon.png",
+  icon: "./assets/images/whatshallwe-launch-icon.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
   newArchEnabled: true,
@@ -57,7 +57,7 @@ const config: ExpoConfig = {
   android: {
     adaptiveIcon: {
       backgroundColor: "#F4F0E6",
-      foregroundImage: "./assets/images/whatshallwe-overlap-icon.png",
+      foregroundImage: "./assets/images/whatshallwe-launch-icon.png",
     },
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
@@ -73,7 +73,7 @@ const config: ExpoConfig = {
     [
       "expo-splash-screen",
       {
-        image: "./assets/images/whatshallwe-overlap-icon.png",
+        image: "./assets/images/whatshallwe-splash.png",
         imageWidth: 200,
         resizeMode: "contain",
         backgroundColor: "#F4F0E6",

@@ -52,7 +52,7 @@ const ink = "#292824";
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 function HomeButton({ onPress }: { onPress: () => void }) {
-  return <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel="처음으로" hitSlop={10} style={styles.homeButton}><View style={styles.homeRoof}/><View style={styles.homeWall}><View style={styles.homeDoor}/></View></Pressable>;
+  return <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel="처음으로" hitSlop={10} style={styles.homeButton}><View style={styles.homeArc}/><View style={styles.homeRoof}/><View style={styles.homeWall}><View style={styles.homeDoor}/></View></Pressable>;
 }
 
 function InviteButton() {
@@ -65,7 +65,8 @@ export default function Home() {
   const [situation, setSituation] = useState<Situation>("any");
   const [partner, setPartner] = useState("");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [votes, setVotes] = useState<Record<string, Vote | undefined>>({});
+  const [votes, setVotes] = useState<Record<string, Record<string, Vote>>>({});
+  const [voterIndex, setVoterIndex] = useState(0);
   const [memory, setMemory] = useState<Memory>({});
   const [showResult, setShowResult] = useState(false);
   const [decided, setDecided] = useState(false);
@@ -80,9 +81,12 @@ export default function Home() {
   useEffect(() => { AsyncStorage.getItem(MEMORY_KEY).then(value => { if (value) setMemory(JSON.parse(value)); }).catch(() => undefined); }, []);
   const relation = `${mode}::${partner.trim().toLowerCase() || "self"}`;
   const participantNames = useMemo(() => partner.split(/[,，]/).map(name => name.trim()).filter(Boolean), [partner]);
-  const currentIndex = candidates.findIndex(c => votes[c.id] === undefined);
-  const answered = candidates.filter(c => votes[c.id] !== undefined).length;
-  const allAnswered = candidates.length > 0 && answered === candidates.length;
+  const participants = useMemo(() => (mode === "solo" || participantNames.length === 0) ? ["나"] : ["나", ...participantNames], [mode, participantNames]);
+  const currentVoter = participants[voterIndex] ?? participants[0];
+  const currentIndex = candidates.findIndex(c => votes[c.id]?.[currentVoter] === undefined);
+  const answered = candidates.filter(c => votes[c.id]?.[currentVoter] !== undefined).length;
+  const voterDone = candidates.length > 0 && answered === candidates.length;
+  const allAnswered = voterDone && voterIndex === participants.length - 1;
   const learning = useMemo(() => POOLS[mode][situation].filter(x => !candidates.some(c => c.title === x)).slice(0, 5), [mode, situation, candidates]);
 
   const saveMemory = (next: Memory) => { setMemory(next); AsyncStorage.setItem(MEMORY_KEY, JSON.stringify(next)).catch(() => undefined); };
@@ -91,13 +95,14 @@ export default function Home() {
     const history = memory[selectedRelation]?.items ?? {};
     const pool = [...POOLS[selectedMode][nextSituation]].sort((a, b) => ((history[b]?.sum ?? 0) + (history[b]?.decisions ?? 0) * 2) - ((history[a]?.sum ?? 0) + (history[a]?.decisions ?? 0) * 2));
     const picked = pool.slice(0, 3).map((title, i) => ({ id: `${i}-${uid()}`, title, source: history[title] ? "memory" as const : "starter" as const }));
-    setMode(selectedMode); setPartner(selectedPartner); setSituation(nextSituation); setCandidates(picked); setVotes({}); setShowResult(false); setDecided(false); setLearnIndex(null); setScreen("match");
+    setMode(selectedMode); setPartner(selectedPartner); setSituation(nextSituation); setCandidates(picked); setVotes({}); setVoterIndex(0); setShowResult(false); setDecided(false); setLearnIndex(null); setScreen("match");
   };
   const vote = (kind: Vote) => {
     const current = candidates[currentIndex]; if (!current) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setVotes(old => ({ ...old, [current.id]: kind })); cardX.setValue(0);
+    setVotes(old => ({ ...old, [current.id]: { ...(old[current.id] ?? {}), [currentVoter]: kind } })); cardX.setValue(0);
   };
+  const nextVoter = () => { setVoterIndex(i => Math.min(i + 1, participants.length - 1)); cardX.setValue(0); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); };
   const candidatePan = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onStartShouldSetPanResponderCapture: () => true,
@@ -114,12 +119,13 @@ export default function Home() {
     },
     onPanResponderTerminate: () => Animated.spring(cardX, { toValue: 0, useNativeDriver: true }).start(),
   }), [currentIndex, candidates]);
-  const score = (candidate: Candidate) => votes[candidate.id] ?? -999;
+  const votesFor = (candidate: Candidate) => Object.values(votes[candidate.id] ?? {});
+  const score = (candidate: Candidate) => { const values = votesFor(candidate); return values.length ? values.reduce((sum: number, v) => sum + v, 0) / values.length : -999; };
   const ordered = [...candidates].sort((a, b) => score(b) - score(a));
-  const reason = (candidate: Candidate) => score(candidate) === 1 ? "오늘 끌리는 선택" : score(candidate) === 0 ? "무난한 선택" : "지금은 별로야";
+  const reason = (candidate: Candidate) => { const avg = score(candidate); return avg >= 0.5 ? "다들 끌리는 선택" : avg >= 0 ? "무난한 선택" : "지금은 별로야"; };
   const persistVotes = () => {
     const next = { ...memory }; next[relation] ??= { uses: 0, items: {} }; next[relation].uses += 1;
-    candidates.forEach(c => { const v = votes[c.id]; if (v === undefined) return; next[relation].items[c.title] ??= { sum: 0, count: 0, decisions: 0 }; next[relation].items[c.title].sum += v; next[relation].items[c.title].count += 1; });
+    candidates.forEach(c => { votesFor(c).forEach(v => { next[relation].items[c.title] ??= { sum: 0, count: 0, decisions: 0 }; next[relation].items[c.title].sum += v; next[relation].items[c.title].count += 1; }); });
     saveMemory(next);
   };
   const openResult = () => { persistVotes(); setShowResult(true); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); };
@@ -177,7 +183,7 @@ export default function Home() {
   if (screen === "setup") return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={[styles.setupPage, styles.setupPageTop]}><Text style={styles.setupTopTitle}>{mode === "group" ? "누구랑?" : `${MODES.find(item => item.id === mode)?.short} 뭐하지?`}</Text><View style={[styles.paper, styles.setupPaperFixed]}>{mode !== "solo" && <><Text style={styles.inputLabel}>{mode === "group" ? "참여자" : "누구랑?"}</Text><TextInput value={partner} onChangeText={setPartner} placeholder={mode === "group" ? "예: 민수, 지수, 소연" : mode === "trio" ? "예: 민수, 지수" : "예: 민수와"} placeholderTextColor="#a29e94" style={styles.input} />{mode === "group" && participantNames.length > 0 && <View style={styles.participantList}>{participantNames.map(name => <View key={name} style={styles.participantChip}><Text style={styles.participantChipText}>{name}</Text></View>)}</View>}</>}<Pressable style={styles.candidateStartButton} onPress={() => makeCandidates("any")}><Text style={styles.candidateStartText}>후보 넘겨보기 →</Text></Pressable></View></ScrollView><View style={styles.homeBottom}><HomeButton onPress={() => setScreen("mode")} /></View></SafeAreaView>;
 
   const current = candidates[currentIndex];
-return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={styles.matchPage}><View style={[styles.header, { justifyContent: "flex-end" }]}><InviteButton /></View><Text style={styles.matchTitle}>{mode === "solo" ? "혼자" : partner || MODES.find(m => m.id === mode)?.short} 뭐 하지?</Text>{memory[relation]?.uses ? <Text style={styles.memoryNote}>이전 반응을 이번 후보에 살짝 반영했어.</Text> : null}<View style={styles.candidatesHead}><Text style={styles.candidatesTitle}>오늘 후보</Text><Text style={styles.progress}>{answered}/{candidates.length}</Text></View><View style={styles.importRow}><TextInput value={importUrl} onChangeText={setImportUrl} placeholder="네이버맵/캐치테이블 링크 붙여넣기" placeholderTextColor="#a29e94" autoCapitalize="none" autoCorrect={false} style={styles.importInput} /><Pressable style={styles.importButton} onPress={submitImportUrl}><Text style={styles.importButtonText}>추가</Text></Pressable></View>{importError && !fallback && <Text style={styles.importErrorText}>{importError}</Text>}{fallback && <View style={styles.fallbackBox}><Text style={styles.importErrorText}>{importError}</Text><TextInput value={fallback.title} onChangeText={title => setFallback(f => f ? { ...f, title } : f)} placeholder="장소 이름만 적어줘" placeholderTextColor="#a29e94" style={styles.fallbackInput} /><View style={styles.fallbackButtons}><Pressable style={styles.fallbackConfirm} onPress={confirmFallback}><Text style={styles.importButtonText}>이 이름으로 추가</Text></Pressable><Pressable style={styles.fallbackCancel} onPress={cancelFallback}><Text style={styles.fallbackCancelText}>취소</Text></Pressable></View></View>}{candidates.length > 0 && <View style={styles.chipRow}>{candidates.map(c => <View key={c.id} style={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{c.title}</Text><Pressable onPress={() => removeCandidate(c.id)} hitSlop={8}><Text style={styles.chipRemove}>×</Text></Pressable></View>)}</View>}{current ?<Animated.View {...candidatePan.panHandlers} style={[styles.card, { transform: [{ translateX: cardX }, { rotate: cardX.interpolate({ inputRange: [-200, 0, 200], outputRange: ["-8deg", "0deg", "8deg"] }) }] }]}><Text style={styles.cardNumber}>후보 {currentIndex + 1}</Text><Text style={styles.cardTitle}>{current.title}</Text>{current.source === "memory" && <Text style={styles.memoryBadge}>우리 기억</Text>}<View style={styles.hint}><Text>← 별로</Text><Text>탭 · 괜찮아</Text><Text>좋아 →</Text></View></Animated.View> : <View style={[styles.card, styles.completeCard]}><Text style={styles.cardTitle}>다 골랐어</Text></View>}{allAnswered && !showResult && <Pressable style={styles.resultButton} onPress={openResult}><Text style={styles.resultButtonText}>결과 보기</Text></Pressable>}{showResult && <View style={styles.resultBox}><Text style={styles.resultEyebrow}>오늘은 이 순서 어때?</Text>{ordered.map((c, i) => <View key={c.id} style={styles.resultRow}><Text style={[styles.rank, i === 0 && styles.topRank]}>{i + 1}</Text><View><Text style={styles.resultTitle}>{c.title}</Text><Text style={styles.resultReason}>{reason(c)}</Text></View></View>)}<Pressable style={[styles.resultButton, decided && styles.disabled]} disabled={decided} onPress={decide}><Text style={styles.resultButtonText}>{decided ? "결정했어 ✓" : `1위 ${ordered[0]?.title}로 결정하기 ✓`}</Text></Pressable>{decided && <Text style={styles.decision}>이걸로 가자! 다음엔 이 선택도 기억할게.</Text>}</View>}{learnIndex !== null && <View style={styles.learnBox}><Text style={styles.learnTitle}>다음엔 더 잘 골라줄게</Text><Text style={styles.learnText}>원하면 가볍게 넘겨줘.</Text>{learnIndex < learning.length ? <Animated.View {...learnPan.panHandlers} style={[styles.learnCard, { transform: [{ translateX: learnX }] }]}><Text style={styles.learnProgress}>{learnIndex + 1} / {learning.length}</Text><Text style={styles.learnName}>{learning[learnIndex]}</Text><Text style={styles.learnHint}>← 별로 · ↑ 진짜 좋아 · 좋아 →</Text></Animated.View> : <Text style={styles.decision}>기억했어. 다음 선택에 반영할게 ✨</Text>}{learnIndex < learning.length && <View style={styles.voteButtons}><Pressable onPress={() => remember(-2)} style={styles.voteButton}><Text>별로</Text></Pressable><Pressable onPress={() => remember(2)} style={styles.voteButton}><Text>진짜 좋아</Text></Pressable><Pressable onPress={() => remember(1)} style={styles.voteButton}><Text>좋아</Text></Pressable></View>}</View>}</ScrollView><View style={styles.homeBottom}><HomeButton onPress={() => setScreen("mode")} /></View></SafeAreaView>;
+return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={styles.matchPage}><View style={[styles.header, { justifyContent: "flex-end" }]}><InviteButton /></View><Text style={styles.matchTitle}>{mode === "solo" ? "혼자" : partner || MODES.find(m => m.id === mode)?.short} 뭐 하지?</Text>{memory[relation]?.uses ? <Text style={styles.memoryNote}>이전 반응을 이번 후보에 살짝 반영했어.</Text> : null}<View style={styles.candidatesHead}><Text style={styles.candidatesTitle}>오늘 후보</Text><Text style={styles.progress}>{answered}/{candidates.length}</Text></View>{participants.length > 1 && <View style={styles.participantRow}>{participants.map(p => <View key={p} style={[styles.participantTag, p === currentVoter && !voterDone && styles.participantTagActive]}><Text style={styles.participantTagText}>{p}</Text></View>)}</View>}<View style={styles.importRow}><TextInput value={importUrl} onChangeText={setImportUrl} placeholder="네이버맵/캐치테이블 링크 붙여넣기" placeholderTextColor="#a29e94" autoCapitalize="none" autoCorrect={false} style={styles.importInput} /><Pressable style={styles.importButton} onPress={submitImportUrl}><Text style={styles.importButtonText}>추가</Text></Pressable></View>{importError && !fallback && <Text style={styles.importErrorText}>{importError}</Text>}{fallback && <View style={styles.fallbackBox}><Text style={styles.importErrorText}>{importError}</Text><TextInput value={fallback.title} onChangeText={title => setFallback(f => f ? { ...f, title } : f)} placeholder="장소 이름만 적어줘" placeholderTextColor="#a29e94" style={styles.fallbackInput} /><View style={styles.fallbackButtons}><Pressable style={styles.fallbackConfirm} onPress={confirmFallback}><Text style={styles.importButtonText}>이 이름으로 추가</Text></Pressable><Pressable style={styles.fallbackCancel} onPress={cancelFallback}><Text style={styles.fallbackCancelText}>취소</Text></Pressable></View></View>}{candidates.length > 0 && <View style={styles.chipRow}>{candidates.map(c => <View key={c.id} style={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{c.title}</Text><Pressable onPress={() => removeCandidate(c.id)} hitSlop={8}><Text style={styles.chipRemove}>×</Text></Pressable></View>)}</View>}{participants.length > 1 && !voterDone && <Text style={styles.voterLabel}>{currentVoter} 차례</Text>}{voterDone && !allAnswered ? <View style={[styles.card, styles.completeCard]}><Text style={styles.cardTitle}>{currentVoter} 다 골랐어!</Text><Pressable style={styles.resultButton} onPress={nextVoter}><Text style={styles.resultButtonText}>다음: {participants[voterIndex + 1]} 차례 →</Text></Pressable></View> : current ? <Animated.View {...candidatePan.panHandlers} style={[styles.card, { transform: [{ translateX: cardX }, { rotate: cardX.interpolate({ inputRange: [-200, 0, 200], outputRange: ["-8deg", "0deg", "8deg"] }) }] }]}><Text style={styles.cardNumber}>후보 {currentIndex + 1}</Text><Text style={styles.cardTitle}>{current.title}</Text>{current.source === "memory" && <Text style={styles.memoryBadge}>우리 기억</Text>}<View style={styles.hint}><Text>← 별로</Text><Text>탭 · 괜찮아</Text><Text>좋아 →</Text></View></Animated.View> : <View style={[styles.card, styles.completeCard]}><Text style={styles.cardTitle}>다 골랐어</Text></View>}{allAnswered && !showResult && <Pressable style={styles.resultButton} onPress={openResult}><Text style={styles.resultButtonText}>결과 보기</Text></Pressable>}{showResult && <View style={styles.resultBox}><Text style={styles.resultEyebrow}>오늘은 이 순서 어때?</Text>{ordered.map((c, i) => <View key={c.id} style={styles.resultRow}><Text style={[styles.rank, i === 0 && styles.topRank]}>{i + 1}</Text><View><Text style={styles.resultTitle}>{c.title}</Text><Text style={styles.resultReason}>{reason(c)}</Text></View></View>)}<Pressable style={[styles.resultButton, decided && styles.disabled]} disabled={decided} onPress={decide}><Text style={styles.resultButtonText}>{decided ? "결정했어 ✓" : `1위 ${ordered[0]?.title}로 결정하기 ✓`}</Text></Pressable>{decided && <Text style={styles.decision}>이걸로 가자! 다음엔 이 선택도 기억할게.</Text>}</View>}{learnIndex !== null && <View style={styles.learnBox}><Text style={styles.learnTitle}>다음엔 더 잘 골라줄게</Text><Text style={styles.learnText}>원하면 가볍게 넘겨줘.</Text>{learnIndex < learning.length ? <Animated.View {...learnPan.panHandlers} style={[styles.learnCard, { transform: [{ translateX: learnX }] }]}><Text style={styles.learnProgress}>{learnIndex + 1} / {learning.length}</Text><Text style={styles.learnName}>{learning[learnIndex]}</Text><Text style={styles.learnHint}>← 별로 · ↑ 진짜 좋아 · 좋아 →</Text></Animated.View> : <Text style={styles.decision}>기억했어. 다음 선택에 반영할게 ✨</Text>}{learnIndex < learning.length && <View style={styles.voteButtons}><Pressable onPress={() => remember(-2)} style={styles.voteButton}><Text>별로</Text></Pressable><Pressable onPress={() => remember(2)} style={styles.voteButton}><Text>진짜 좋아</Text></Pressable><Pressable onPress={() => remember(1)} style={styles.voteButton}><Text>좋아</Text></Pressable></View>}</View>}</ScrollView><View style={styles.homeBottom}><HomeButton onPress={() => setScreen("mode")} /></View></SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
@@ -203,11 +209,12 @@ const styles = StyleSheet.create({
   participantList: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 18 },
   participantChip: { borderWidth: 1, borderColor: "#77736b", borderRadius: 18, paddingHorizontal: 13, paddingVertical: 6, backgroundColor: "#f4f0e6" },
   participantChipText: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 18 },
-  homeButton: { width: 34, height: 34, alignItems: "center", justifyContent: "flex-end", paddingBottom: 3 },
-  homeBottom: { position: "absolute", left: 0, right: 0, bottom: 18, alignItems: "center" },
-  homeRoof: { position: "absolute", top: 4, width: 20, height: 20, borderTopWidth: 2, borderLeftWidth: 2, borderColor: ink, transform: [{ rotate: "45deg" }] },
-  homeWall: { width: 18, height: 15, borderLeftWidth: 2, borderRightWidth: 2, borderBottomWidth: 2, borderColor: ink, alignItems: "center", justifyContent: "flex-end" },
-  homeDoor: { width: 5, height: 8, borderWidth: 1.5, borderBottomWidth: 0, borderColor: ink },
+  homeButton: { width: 92, height: 82, alignItems: "center", justifyContent: "flex-end", paddingBottom: 3 },
+  homeBottom: { position: "absolute", left: 0, right: 0, bottom: 42, alignItems: "center" },
+  homeArc: { position: "absolute", top: 0, width: 86, height: 43, borderTopWidth: 1.5, borderLeftWidth: 1.5, borderRightWidth: 1.5, borderColor: "#656159", borderTopLeftRadius: 43, borderTopRightRadius: 43, borderBottomWidth: 0, opacity: 0.78 },
+  homeRoof: { position: "absolute", top: 35, width: 28, height: 28, borderTopWidth: 2.5, borderLeftWidth: 2.5, borderColor: ink, transform: [{ rotate: "45deg" }] },
+  homeWall: { width: 25, height: 23, borderLeftWidth: 2.5, borderRightWidth: 2.5, borderBottomWidth: 2.5, borderColor: ink, alignItems: "center", justifyContent: "flex-end" },
+  homeDoor: { width: 7, height: 11, borderWidth: 2, borderBottomWidth: 0, borderColor: ink },
   inviteButton: { flexDirection: "row", alignItems: "center", gap: 7, borderWidth: 1, borderColor: "#77736b", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12 },
   inviteLabel: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 16 },
   inviteSketch: { width: 19, height: 18, position: "relative" },
@@ -229,4 +236,9 @@ const styles = StyleSheet.create({
   chip: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "#77736b", borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: "#f4f0e6", maxWidth: 180 },
   chipText: { color: ink, fontSize: 14 },
   chipRemove: { color: "#767269", fontSize: 16, fontFamily: "Gaegu_700Bold" },
+  participantRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
+  participantTag: { borderWidth: 1, borderColor: "#9e998d", borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: "#f4f0e6" },
+  participantTagActive: { borderWidth: 2, borderColor: ink, backgroundColor: "#faf8f1" },
+  participantTagText: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 14 },
+  voterLabel: { marginTop: 14, color: "#767269", fontFamily: "Gaegu_700Bold", fontSize: 16, textAlign: "center" },
 });

@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>뭐할까?</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+  <script>
+    tailwind.config = { theme: { extend: { fontFamily: { sans: ["Pretendard Variable","Pretendard","system-ui","sans-serif"] } } } };
+  </script>
+</head>
+<body id="app-bg" class="min-h-dvh bg-sky-100 text-slate-900 antialiased transition-colors duration-500">
+  <main id="screen-mode" class="mx-auto flex min-h-dvh max-w-lg flex-col justify-center px-5 py-8">
+    <div class="text-center">
+      <p class="text-5xl">😋</p>
+      <h1 class="mt-3 text-4xl font-black tracking-tight">뭐할까?</h1>
+    </div>
+
+    <section class="mt-10 rounded-3xl border border-white/70 bg-white/85 p-5 shadow-xl shadow-slate-900/5 backdrop-blur">
+      <h2 class="text-center text-2xl font-black">누구랑?</h2>
+
+      <div class="mt-6">
+        <div id="mode-track-wrap" class="relative h-[96px] w-full touch-none select-none">
+          <div class="pointer-events-none absolute left-0 right-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-slate-200/90 shadow-inner shadow-slate-300/50" aria-hidden="true"></div>
+          <button
+            type="button"
+            id="mode-handle"
+            class="absolute top-0 z-10 flex h-[96px] w-[96px] touch-none cursor-grab flex-col items-center justify-center rounded-full border border-white/90 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.12)] ring-1 ring-slate-900/5 transition-[left,box-shadow] duration-150 ease-out active:cursor-grabbing active:shadow-[0_12px_36px_rgb(0,0,0,0.16)]"
+            style="left:0"
+            aria-valuemin="0" aria-valuemax="3" aria-valuenow="0" aria-label="관계 선택 슬라이더"
+          >
+            <span id="mode-handle-emoji" class="text-2xl" aria-hidden="true">🧍</span>
+            <span id="mode-handle-text" class="mt-1 text-sm font-black text-slate-900">혼자</span>
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <div id="incoming-banner" class="mt-4 hidden rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-800"></div>
+  </main>
+
+  <main id="screen-setup" class="mx-auto hidden min-h-dvh max-w-lg flex-col justify-center px-5 py-8">
+    <button id="setup-back" class="mb-6 self-start rounded-xl px-2 py-1.5 text-sm font-semibold text-slate-600 hover:bg-white/60">← 돌아가기</button>
+    <section class="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-xl shadow-slate-900/5 backdrop-blur">
+      <h2 class="text-2xl font-black">상황 하나만 알려줘</h2>
+
+      <label id="partner-label" for="partner-input" class="mt-5 block text-sm font-bold text-slate-700">함께할 사람</label>
+      <input id="partner-input" maxlength="40" class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-base outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20" placeholder="예: 민수" />
+
+      <p class="mt-5 text-sm font-bold text-slate-700">지금 뭐가 당겨?</p>
+      <div id="situation-buttons" class="mt-2 grid grid-cols-2 gap-2"></div>
+
+    </section>
+  </main>
+
+  <main id="screen-match" class="mx-auto hidden min-h-dvh max-w-lg flex-col px-5 pb-10 pt-[max(1.25rem,env(safe-area-inset-top))]">
+    <header class="flex items-center justify-between gap-3">
+      <button id="match-back" class="rounded-xl px-2 py-1.5 text-sm font-semibold text-slate-600 hover:bg-white/60">← 처음으로</button>
+      <button id="share-session" class="rounded-xl border border-white/80 bg-white/80 px-3 py-2 text-sm font-bold text-slate-700 shadow-sm">친구 초대 ↗</button>
+    </header>
+
+    <section class="mt-5">
+      <h2 id="match-title" class="mt-1 text-3xl font-black tracking-tight">오늘 뭐 하지?</h2>
+      <div id="memory-note" class="mt-3 hidden rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800"></div>
+    </section>
+
+    <section class="mt-5 rounded-2xl border border-white/70 bg-white/80 p-4 shadow-md shadow-slate-900/5">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="font-black">오늘 후보 3개</h3>
+        </div>
+        <span id="progress-pill" class="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">0/3</span>
+      </div>
+    </section>
+
+    <ul id="candidate-list" class="mt-4 space-y-3"></ul>
+
+    <section class="mt-4 rounded-2xl border border-white/70 bg-white/80 p-4 shadow-sm">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-black">후보 직접 추가</p>
+        </div>
+      </div>
+      <div class="mt-3 flex gap-2">
+        <input id="custom-input" maxlength="60" class="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-emerald-500" placeholder="예: 방탈출" />
+        <button id="custom-add" class="rounded-xl bg-emerald-600 px-4 py-3 font-bold text-white">추가</button>
+      </div>
+    </section>
+
+    <button id="show-result" class="mt-5 w-full rounded-2xl bg-slate-900 px-5 py-4 font-black text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40">모두 반응하면 결과 보기</button>
+
+    <section id="result-section" class="mt-5 hidden rounded-3xl border border-emerald-200 bg-emerald-50/90 p-5 shadow-lg shadow-emerald-900/5">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">TODAY'S PICK</p>
+          <h3 class="mt-1 text-2xl font-black">오늘은 이 순서 어때?</h3>
+        </div>
+        <span class="text-3xl">⚡</span>
+      </div>
+      <ol id="result-list" class="mt-4 space-y-2"></ol>
+      <button id="decide-top" class="mt-4 w-full rounded-2xl bg-emerald-600 px-5 py-4 font-black text-white">1위로 결정하기 ✓</button>
+      <p id="decision-status" class="mt-3 hidden text-center text-sm font-black text-emerald-800"></p>
+    </section>
+
+    <section id="swipe-learn-section" class="mt-5 hidden rounded-3xl border border-white/70 bg-white/85 p-5 shadow-lg shadow-slate-900/5">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-lg font-black">다음엔 더 잘 골라줄게</h3>
+          <p class="mt-1 text-sm text-slate-500">원하면 5개만 가볍게 넘겨줘.</p>
+        </div>
+        <button id="skip-swipe" class="rounded-xl px-2 py-1.5 text-xs font-bold text-slate-400 hover:bg-slate-100">건너뛰기</button>
+      </div>
+      <div id="swipe-card" class="mt-4 touch-none select-none rounded-3xl border border-slate-100 bg-slate-50 px-5 py-8 text-center shadow-inner transition-transform">
+        <p id="swipe-progress" class="text-xs font-black text-slate-400"></p>
+        <p id="swipe-title" class="mt-3 text-2xl font-black"></p>
+        <p class="mt-5 text-xs font-semibold text-slate-400">← 별로 · ↑ 진짜 좋아 · 좋아 →</p>
+      </div>
+      <div class="mt-3 grid grid-cols-3 gap-2">
+        <button data-swipe="dislike" class="rounded-xl border border-slate-200 bg-white py-3 text-sm font-black text-slate-600">👎 별로</button>
+        <button data-swipe="super" class="rounded-xl border border-emerald-200 bg-emerald-50 py-3 text-sm font-black text-emerald-700">😍 진짜 좋아</button>
+        <button data-swipe="like" class="rounded-xl border border-slate-200 bg-white py-3 text-sm font-black text-slate-600">👍 좋아</button>
+      </div>
+      <p id="swipe-done" class="mt-3 hidden text-center text-sm font-bold text-emerald-700">기억했어. 다음 선택에 살짝 반영할게 ✨</p>
+    </section>
+
+    <section id="invite-response-section" class="mt-5 hidden rounded-2xl border border-violet-200 bg-violet-50 p-4">
+      <p class="text-sm font-black text-violet-900">친구의 투표가 도착했어</p>
+      <p id="invite-response-text" class="mt-1 text-xs font-medium text-violet-700"></p>
+    </section>
+
+    <section id="guest-submit-section" class="mt-5 hidden rounded-2xl border border-violet-200 bg-violet-50 p-4">
+      <p class="text-sm font-black text-violet-900">초대받은 세션</p>
+      <p class="mt-1 text-xs text-violet-700">내 반응을 다 고르면 호스트에게 응답 링크를 보낼 수 있어.</p>
+      <button id="send-response" class="mt-3 w-full rounded-xl bg-violet-600 px-4 py-3 font-black text-white disabled:opacity-40">투표 결과 보내기 ↗</button>
+    </section>
+  </main>
+
+  <div id="toast" class="pointer-events-none fixed bottom-5 left-1/2 z-50 hidden -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-xl"></div>
+
+<script>
+(() => {
+  const MODES = [
+    { id:"solo", label:"혼자", short:"혼자", emoji:"🧍", people:1, bg:"bg-sky-100" },
+    { id:"duo", label:"연인/친구 1명", short:"둘이", emoji:"👥", people:2, bg:"bg-pink-100" },
+    { id:"trio", label:"친구 2~3명", short:"친구들", emoji:"🫶", people:3, bg:"bg-violet-100" },
+    { id:"group", label:"모임", short:"모임", emoji:"🎉", people:4, bg:"bg-orange-100" },
+  ];
+  const SITUATIONS = [
+    { id:"eat", label:"먹기", emoji:"🍜" },
+    { id:"play", label:"놀기", emoji:"🎮" },
+    { id:"chill", label:"쉬기", emoji:"☕" },
+    { id:"any", label:"아무거나", emoji:"🎲" },
+  ];
+  const POOLS = {
+    solo: {
+      eat:["혼밥 맛집","브런치","디저트 카페","편의점 신상 털기","시장 구경"],
+      play:["영화","산책","서점","전시","코인노래방"],
+      chill:["카페","공원 산책","책 읽기","드라이브","찜질방"],
+      any:["산책","카페","영화","서점","전시"]
+    },
+    duo: {
+      eat:["맛집","라멘","고기","브런치","디저트 카페"],
+      play:["볼링","전시","보드게임 카페","영화","방탈출"],
+      chill:["카페","산책","드라이브","공원","한강 피크닉"],
+      any:["맛집","카페","전시","볼링","영화"]
+    },
+    trio: {
+      eat:["고기","맛집","술집","피자","브런치"],
+      play:["볼링","보드게임 카페","방탈출","코인노래방","당구"],
+      chill:["대형 카페","한강","공원","만화카페","드라이브"],
+      any:["맛집","볼링","보드게임 카페","카페","방탈출"]
+    },
+    group: {
+      eat:["고기","술집","치킨","피자","포차"],
+      play:["방탈출","볼링","보드게임 카페","노래방","스크린야구"],
+      chill:["대형 카페","한강 피크닉","공원","루프탑","드라이브"],
+      any:["고기","술집","방탈출","볼링","보드게임 카페"]
+    }
+  };
+  const SCORE = { love:1, ok:0, dislike:-2 };
+  const MEMORY_KEY = "tastematch-memory-v0.3";
+  const DECISION_KEY = "tastematch-decisions-v0.3";
+  const SESSION_KEY = "tastematch-current-session-v0.3";
+
+  const state = {
+    mode:"solo", situation:"any", partner:"", candidates:[], votes:{}, participantVotes:[],
+    sessionId:null, decided:null, guest:false, guestName:"친구", hostPayload:null
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const screenMode = $("screen-mode"), screenSetup = $("screen-setup"), screenMatch = $("screen-match");
+
+  function safeParse(s, fallback) { try { return JSON.parse(s); } catch { return fallback; } }
+  function loadMemory(){ return safeParse(localStorage.getItem(MEMORY_KEY)||"{}",{}); }
+  function saveMemory(m){ localStorage.setItem(MEMORY_KEY, JSON.stringify(m)); }
+  function loadDecisions(){ return safeParse(localStorage.getItem(DECISION_KEY)||"[]",[]); }
+  function show(screen){ [screenMode,screenSetup,screenMatch].forEach(x=>x.classList.add("hidden")); screen.classList.remove("hidden"); if(screen===screenSetup||screen===screenMatch) screen.classList.add("flex"); }
+  function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.remove("hidden"); setTimeout(()=>t.classList.add("hidden"),1800); }
+  function escapeHtml(s){ return String(s).replace(/[&<>\"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+  function uid(){ return "tm-"+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+  function enc(obj){ return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }
+  function dec(str){ try{return JSON.parse(decodeURIComponent(escape(atob(str))));}catch{return null;} }
+  function relationKey(){ return `${state.mode}::${state.partner.trim().toLowerCase() || "self"}`; }
+
+  const MODE_HANDLE_SIZE = 96;
+  let modeDragging = false, modeStartX = 0, modeStartLeft = 0, modeActivePointer = null, modeMoved = false;
+
+  function modeIndex(){ const i=MODES.findIndex(m=>m.id===state.mode); return i<0?0:i; }
+  function modeMaxLeft(){ const wrap=$("mode-track-wrap"); return Math.max(0,(wrap?.offsetWidth||MODE_HANDLE_SIZE)-MODE_HANDLE_SIZE); }
+  function modeSnaps(){ const max=modeMaxLeft(); return MODES.map((_,i)=>max*i/(MODES.length-1)); }
+  function nearestModeIndex(left){
+    const snaps=modeSnaps(); let best=0, dist=Infinity;
+    snaps.forEach((x,i)=>{ const d=Math.abs(left-x); if(d<dist){dist=d;best=i;} });
+    return best;
+  }
+  function setModeSlider(index, animate=true){
+    const handle=$("mode-handle"); if(!handle)return;
+    const i=Math.max(0,Math.min(MODES.length-1,index)); const m=MODES[i];
+    state.mode=m.id; applyBg();
+    if(!animate) handle.style.transition="none";
+    handle.style.left=`${modeSnaps()[i]||0}px`;
+    if(!animate) requestAnimationFrame(()=>handle.style.transition="");
+    handle.setAttribute("aria-valuenow",String(i));
+    $("mode-handle-text").textContent=m.short; $("mode-handle-emoji").textContent=m.emoji;
+  }
+  function layoutModeSlider(){ setModeSlider(modeIndex(),false); }
+  function initModeSlider(){
+    const handle=$("mode-handle"); if(!handle)return;
+    handle.addEventListener("pointerdown",e=>{
+      if(e.pointerType==="mouse"&&e.button!==0)return; e.preventDefault(); modeDragging=true; modeActivePointer=e.pointerId;
+      modeStartX=e.clientX; modeStartLeft=parseFloat(handle.style.left)||0; modeMoved=false;
+      try{handle.setPointerCapture(e.pointerId);}catch{}
+    });
+    window.addEventListener("pointermove",e=>{
+      if(!modeDragging)return;
+      if(Math.abs(e.clientX-modeStartX)>6) modeMoved=true;
+      const max=modeMaxLeft(); const left=Math.max(0,Math.min(max,modeStartLeft+(e.clientX-modeStartX)));
+      handle.style.left=`${left}px`; const i=nearestModeIndex(left); const m=MODES[i];
+      $("mode-handle-text").textContent=m.short; $("mode-handle-emoji").textContent=m.emoji; applyPreviewBg(m.id);
+    });
+    const finish=e=>{
+      if(!modeDragging)return; if(modeActivePointer!=null&&e.pointerId!=null&&e.pointerId!==modeActivePointer)return;
+      const wasTap=!modeMoved;
+      modeDragging=false; modeActivePointer=null; setModeSlider(nearestModeIndex(parseFloat(handle.style.left)||0));
+      if(wasTap){ setupLabels(); renderSituationButtons(); show(screenSetup); }
+    };
+    window.addEventListener("pointerup",finish); window.addEventListener("pointercancel",finish);
+    window.addEventListener("resize",()=>{ if(!screenMode.classList.contains("hidden")) layoutModeSlider(); });
+    layoutModeSlider();
+  }
+  function applyPreviewBg(modeId){ const body=$("app-bg"); MODES.forEach(m=>body.classList.remove(m.bg)); body.classList.add(MODES.find(m=>m.id===modeId)?.bg||"bg-sky-100"); }
+  function renderSituationButtons(){
+    $("situation-buttons").innerHTML=SITUATIONS.map(s=>`<button data-situation="${s.id}" class="situation-btn rounded-xl border px-3 py-3 text-sm font-black ${state.situation===s.id?"border-emerald-600 bg-emerald-600 text-white":"border-slate-200 bg-white text-slate-700"}">${s.emoji} ${s.label}</button>`).join("");
+    document.querySelectorAll(".situation-btn").forEach(b=>b.onclick=()=>{
+      state.situation=b.dataset.situation;
+      enterMatch();
+    });
+  }
+  function applyBg(){ const body=$("app-bg"); MODES.forEach(m=>body.classList.remove(m.bg)); body.classList.add(MODES.find(m=>m.id===state.mode)?.bg||"bg-sky-100"); }
+
+  function getHistoryScores(){
+    const memory=loadMemory();
+    const rel=memory[relationKey()]||{};
+    const scoreMap={};
+    Object.entries(rel.items||{}).forEach(([title,info])=>{ scoreMap[title]=(info.sum||0)+(info.decisions||0)*2; });
+    return scoreMap;
+  }
+  function buildCandidates(){
+    const pool=[...(POOLS[state.mode]?.[state.situation]||POOLS[state.mode].any)];
+    const history=getHistoryScores();
+    const decisions=loadDecisions().filter(d=>d.relationKey===relationKey());
+    const latestDecision=decisions[0]?.title;
+    const ranked=[...new Set(pool)].sort((a,b)=>(history[b]||0)-(history[a]||0));
+    const picks=[];
+    if(latestDecision && ranked.includes(latestDecision)) picks.push(latestDecision);
+    ranked.forEach(x=>{ if(picks.length<3&&!picks.includes(x)) picks.push(x); });
+    state.candidates=picks.map((title,i)=>({id:`c-${i}-${uid()}`,title,source:(history[title]||latestDecision===title)?"memory":"starter"}));
+    state.votes={}; state.candidates.forEach(c=>state.votes[c.id]=null);
+    state.participantVotes=[]; state.decided=null;
+  }
+  function addCustom(title){
+    const t=title.trim(); if(!t) return;
+    const c={id:`custom-${uid()}`,title:t,source:"custom"}; state.candidates.push(c); state.votes[c.id]=null; renderCandidates(); updateProgress(); $("custom-input").value="";
+  }
+
+  function updateMemoryFromCurrent(){
+    const memory=loadMemory(); const key=relationKey();
+    memory[key] ||= { partner:state.partner, mode:state.mode, items:{}, uses:0 };
+    memory[key].uses=(memory[key].uses||0)+1;
+    state.candidates.forEach(c=>{
+      const own=state.votes[c.id]; if(own===null||own===undefined) return;
+      memory[key].items[c.title] ||= {sum:0,count:0,decisions:0};
+      memory[key].items[c.title].sum += own; memory[key].items[c.title].count += 1;
+    });
+    if(state.decided){ memory[key].items[state.decided.title] ||= {sum:0,count:0,decisions:0}; memory[key].items[state.decided.title].decisions += 1; }
+    saveMemory(memory);
+  }
+
+  function participantScore(candidateId){
+    const own=state.votes[candidateId];
+    const external=state.participantVotes.map(p=>p.votes[candidateId]).filter(v=>v!==null&&v!==undefined);
+    const all=[own,...external].filter(v=>v!==null&&v!==undefined);
+    if(!all.length) return -999;
+    if(state.mode==="duo" && all.some(v=>v===SCORE.dislike)) return -999;
+    let avg=all.reduce((a,b)=>a+b,0)/all.length;
+    if(state.mode==="trio" && all.filter(v=>v===SCORE.love).length>=2) avg*=1.15;
+    if(state.mode==="group" && all.length>1){ avg=(all[0]*1.5+all.slice(1).reduce((a,b)=>a+b,0))/(1.5+all.length-1); }
+    return avg;
+  }
+  function sortedCandidates(){ return [...state.candidates].sort((a,b)=>participantScore(b.id)-participantScore(a.id)); }
+
+  function allOwnAnswered(){ return state.candidates.length>0 && state.candidates.every(c=>state.votes[c.id]!==null&&state.votes[c.id]!==undefined); }
+  function renderCandidates(){
+    $("candidate-list").innerHTML=state.candidates.map((c,idx)=>{
+      const v=state.votes[c.id];
+      const memoryBadge=c.source==="memory"?`<span class="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-black text-amber-700">우리 기억</span>`:"";
+      return `<li class="rounded-2xl border border-white/70 bg-white/90 p-4 shadow-md shadow-slate-900/5">
+        <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-black text-slate-400">후보 ${idx+1}</p><h3 class="mt-1 text-lg font-black">${escapeHtml(c.title)}</h3></div>${memoryBadge}</div>
+        <div class="mt-4 grid grid-cols-3 gap-2" role="group" aria-label="${escapeHtml(c.title)} 반응">
+          ${voteBtn(c,"love","😍 극호",v)}${voteBtn(c,"ok","🙂 호",v)}${voteBtn(c,"dislike","🙅 불호",v)}
+        </div>
+      </li>`;
+    }).join("");
+    document.querySelectorAll("[data-vote-id]").forEach(b=>b.onclick=()=>{ state.votes[b.dataset.voteId]=SCORE[b.dataset.kind]; state.decided=null; renderCandidates(); updateProgress(); saveCurrentSession(); });
+  }
+  function voteBtn(c,kind,label,current){ const active=current===SCORE[kind]; const cls=active?(kind==="love"?"bg-emerald-600 text-white border-emerald-600":kind==="dislike"?"bg-rose-500 text-white border-rose-500":"bg-slate-700 text-white border-slate-700"):"bg-white text-slate-600 border-slate-200"; return `<button data-vote-id="${c.id}" data-kind="${kind}" class="rounded-xl border px-2 py-3 text-sm font-black ${cls}">${label}</button>`; }
+  function updateProgress(){
+    const answered=state.candidates.filter(c=>state.votes[c.id]!==null&&state.votes[c.id]!==undefined).length;
+    $("progress-pill").textContent=`${answered}/${state.candidates.length}`;
+    const ok=allOwnAnswered(); $("show-result").disabled=!ok; $("show-result").textContent=ok?"결과 보기 🎯":"모두 반응하면 결과 보기";
+    $("send-response").disabled=!ok;
+  }
+  function resultReason(candidateId){
+    const own=state.votes[candidateId];
+    const external=state.participantVotes.map(p=>p.votes[candidateId]).filter(v=>v!==null&&v!==undefined);
+    const all=[own,...external].filter(v=>v!==null&&v!==undefined);
+    if(!all.length) return "아직 반응이 부족해";
+    if(state.mode==="solo"){
+      if(own===SCORE.love) return "오늘 끌리는 선택 ❤️";
+      if(own===SCORE.dislike) return "지금은 별로야";
+      return "무난한 선택 🙂";
+    }
+    const loves=all.filter(v=>v===SCORE.love).length;
+    const dislikes=all.filter(v=>v===SCORE.dislike).length;
+    if(state.mode==="duo" && dislikes) return "한 명이 별로래 👀";
+    if(loves===all.length) return "다 같이 좋아해 ❤️";
+    if(dislikes===0 && loves>0) return "좋아하는 사람이 있어 ✨";
+    if(dislikes===0) return "무난하게 잘 맞아 🙂";
+    if(loves>dislikes) return "좋아하는 쪽이 조금 더 많아";
+    return "호불호가 조금 갈려";
+  }
+
+  let swipeItems=[]; let swipeIndex=0; let swipeStartX=0; let swipeStartY=0; let swipeDragging=false;
+  function startSwipeLearning(){
+    const pool=[...(POOLS[state.mode]?.[state.situation]||POOLS[state.mode].any)];
+    const used=new Set(state.candidates.map(c=>c.title));
+    swipeItems=[...new Set(pool)].filter(x=>!used.has(x)).slice(0,5);
+    swipeIndex=0;
+    if(!swipeItems.length) return;
+    $("swipe-learn-section").classList.remove("hidden");
+    $("swipe-done").classList.add("hidden");
+    renderSwipeCard();
+  }
+  function renderSwipeCard(){
+    if(swipeIndex>=swipeItems.length){
+      $("swipe-card").classList.add("hidden");
+      document.querySelectorAll("[data-swipe]").forEach(b=>b.classList.add("hidden"));
+      $("swipe-done").classList.remove("hidden");
+      return;
+    }
+    $("swipe-card").classList.remove("hidden");
+    document.querySelectorAll("[data-swipe]").forEach(b=>b.classList.remove("hidden"));
+    $("swipe-progress").textContent=`${swipeIndex+1} / ${swipeItems.length}`;
+    $("swipe-title").textContent=swipeItems[swipeIndex];
+    $("swipe-card").style.transform="";
+  }
+  function rememberSwipe(kind){
+    if(swipeIndex>=swipeItems.length) return;
+    const title=swipeItems[swipeIndex];
+    const memory=loadMemory(); const key=relationKey();
+    memory[key] ||= { partner:state.partner, mode:state.mode, items:{}, uses:0 };
+    memory[key].items[title] ||= {sum:0,count:0,decisions:0};
+    const delta=kind==="dislike"?-2:kind==="super"?2:1;
+    memory[key].items[title].sum += delta; memory[key].items[title].count += 1;
+    saveMemory(memory);
+    swipeIndex += 1; renderSwipeCard();
+  }
+
+  function renderResult(){
+    const ordered=sortedCandidates(); $("result-list").innerHTML=ordered.map((c,i)=>{
+      const score=participantScore(c.id); const explain=score===-999?resultReason(c.id):resultReason(c.id);
+      return `<li class="flex items-center gap-3 rounded-xl border border-emerald-100 bg-white/90 px-3 py-3"><span class="flex h-9 w-9 items-center justify-center rounded-xl ${i===0?"bg-emerald-600 text-white":"bg-slate-100 text-slate-600"} font-black">${i+1}</span><div class="min-w-0"><p class="truncate font-black">${escapeHtml(c.title)}</p><p class="text-xs text-slate-500">${explain}</p></div></li>`;
+    }).join(""); $("result-section").classList.remove("hidden");
+    const top=ordered.find(c=>participantScore(c.id)>-999); $("decide-top").disabled=!top; $("decide-top").textContent=top?`1위 · ${top.title}로 결정하기 ✓`:"결정 가능한 후보가 없어";
+  }
+  function decideTop(){
+    const top=sortedCandidates().find(c=>participantScore(c.id)>-999); if(!top)return;
+    state.decided=top;
+    const record={id:uid(),title:top.title,mode:state.mode,situation:state.situation,partner:state.partner,relationKey:relationKey(),decidedAt:new Date().toISOString()};
+    const arr=loadDecisions(); arr.unshift(record); localStorage.setItem(DECISION_KEY,JSON.stringify(arr.slice(0,50)));
+    updateMemoryFromCurrent(); saveCurrentSession();
+    $("decision-status").textContent=`${top.title} · 이걸로 가자! 다음엔 이 선택도 기억할게.`; $("decision-status").classList.remove("hidden"); $("decide-top").disabled=true; $("decide-top").classList.add("opacity-50"); startSwipeLearning();
+  }
+
+  function setupLabels(){
+    const mode=MODES.find(m=>m.id===state.mode);
+    $("partner-label").textContent=state.mode==="solo"?"내 세션 이름 (선택)":state.mode==="group"?"모임 이름":"함께할 사람/세션 이름";
+    $("partner-input").placeholder=state.mode==="solo"?"예: 오늘의 혼놀":state.mode==="group"?"예: 대학 동기 모임":"예: 민수";
+    $("partner-input").value=state.partner;
+  }
+  function enterMatch(){
+    state.partner=$("partner-input").value.trim();
+    state.sessionId=uid(); state.guest=false; buildCandidates(); renderMatch(); saveCurrentSession(); show(screenMatch);
+  }
+  function renderMatch(){
+    const sit=SITUATIONS.find(s=>s.id===state.situation);
+    const mode=MODES.find(m=>m.id===state.mode);
+    const who=state.mode==="solo"?"혼자":(state.partner || mode?.short || "같이");
+    $("match-title").textContent=`${who} · 뭐 하지?`;
+    const memory=loadMemory()[relationKey()];
+    if(memory?.uses){ $("memory-note").textContent=`✨ ${state.partner||"나"}와의 이전 반응 ${memory.uses}회분을 이번 후보 순서에 반영했어.`; $("memory-note").classList.remove("hidden"); } else $("memory-note").classList.add("hidden");
+    renderCandidates(); updateProgress(); $("result-section").classList.add("hidden"); $("decision-status").classList.add("hidden"); $("swipe-learn-section").classList.add("hidden");
+    $("guest-submit-section").classList.toggle("hidden",!state.guest); $("share-session").classList.toggle("hidden",state.guest);
+  }
+
+  function sessionPayload(){ return {v:1,sessionId:state.sessionId,mode:state.mode,situation:state.situation,partner:state.partner,candidates:state.candidates.map(c=>({id:c.id,title:c.title,source:c.source}))}; }
+  function inviteUrl(){ const u=new URL(location.href); u.search=""; u.searchParams.set("join",enc(sessionPayload())); return u.toString(); }
+  function responseUrl(){ const u=new URL(location.href); u.search=""; u.searchParams.set("response",enc({sessionId:state.sessionId,name:state.guestName||"친구",votes:state.votes})); return u.toString(); }
+  async function shareText(title,url){
+    try{ if(navigator.share){ await navigator.share({title,text:title,url}); return; } await navigator.clipboard.writeText(url); toast("링크를 복사했어"); }
+    catch{ try{await navigator.clipboard.writeText(url);toast("링크를 복사했어");}catch{prompt("이 링크를 복사해줘",url);} }
+  }
+  function saveCurrentSession(){ if(state.guest)return; localStorage.setItem(SESSION_KEY,JSON.stringify({sessionId:state.sessionId,mode:state.mode,situation:state.situation,partner:state.partner,candidates:state.candidates,votes:state.votes,participantVotes:state.participantVotes,decided:state.decided})); }
+  function restoreHostSession(){ const s=safeParse(localStorage.getItem(SESSION_KEY)||"null",null); if(!s)return false; Object.assign(state,s,{guest:false}); return true; }
+  function handleJoin(payload){
+    state.mode=payload.mode; state.situation=payload.situation; state.partner=payload.partner; state.sessionId=payload.sessionId; state.candidates=payload.candidates; state.votes={}; state.candidates.forEach(c=>state.votes[c.id]=null); state.participantVotes=[]; state.guest=true; state.guestName="친구"; applyBg(); renderMatch(); show(screenMatch); $("incoming-banner").classList.add("hidden");
+  }
+  function handleResponse(payload){
+    if(!restoreHostSession() || state.sessionId!==payload.sessionId){ $("incoming-banner").innerHTML="친구 투표 응답이 왔지만 이 브라우저에 원래 세션이 없어. 초대를 만든 기기에서 링크를 열어줘."; $("incoming-banner").classList.remove("hidden"); return; }
+    state.participantVotes = (state.participantVotes||[]).filter(p=>p.name!==payload.name); state.participantVotes.push({name:payload.name,votes:payload.votes}); saveCurrentSession(); applyBg(); renderMatch(); renderResult(); show(screenMatch); $("invite-response-section").classList.remove("hidden"); $("invite-response-text").textContent=`${payload.name}의 반응을 합쳤어. 이제 함께 순위를 볼 수 있어.`;
+  }
+
+  $("setup-back").onclick=()=>show(screenMode);
+  $("match-back").onclick=()=>{ history.replaceState(null,"",location.pathname); state.guest=false; show(screenMode); };
+  $("custom-add").onclick=()=>addCustom($("custom-input").value);
+  $("custom-input").onkeydown=e=>{ if(e.key==="Enter"){e.preventDefault();addCustom(e.target.value);} };
+  $("show-result").onclick=()=>{ renderResult(); updateMemoryFromCurrent(); saveCurrentSession(); };
+  $("decide-top").onclick=decideTop;
+  $("share-session").onclick=()=>shareText("뭐할까? 같이 골라줘",inviteUrl());
+  $("send-response").onclick=()=>{ if(!allOwnAnswered())return; const name=prompt("응답에 표시할 이름",state.guestName)||"친구"; state.guestName=name; shareText("내 뭐할까? 투표 결과",responseUrl()); };
+  $("skip-swipe").onclick=()=>$("swipe-learn-section").classList.add("hidden");
+  document.querySelectorAll("[data-swipe]").forEach(b=>b.onclick=()=>rememberSwipe(b.dataset.swipe));
+  const swipeCard=$("swipe-card");
+  swipeCard.addEventListener("pointerdown",e=>{ swipeDragging=true; swipeStartX=e.clientX; swipeStartY=e.clientY; try{swipeCard.setPointerCapture(e.pointerId)}catch{} });
+  swipeCard.addEventListener("pointermove",e=>{ if(!swipeDragging)return; const dx=e.clientX-swipeStartX, dy=e.clientY-swipeStartY; swipeCard.style.transform=`translate(${dx*.35}px,${dy*.18}px) rotate(${dx*.025}deg)`; });
+  swipeCard.addEventListener("pointerup",e=>{ if(!swipeDragging)return; swipeDragging=false; const dx=e.clientX-swipeStartX, dy=e.clientY-swipeStartY; swipeCard.style.transform=""; if(dy < -55 && Math.abs(dy)>Math.abs(dx)) rememberSwipe("super"); else if(dx>60) rememberSwipe("like"); else if(dx<-60) rememberSwipe("dislike"); });
+  swipeCard.addEventListener("pointercancel",()=>{swipeDragging=false;swipeCard.style.transform="";});
+
+  initModeSlider(); renderSituationButtons(); applyBg();
+  const params=new URLSearchParams(location.search); const join=params.get("join"), response=params.get("response");
+  if(join){ const p=dec(join); if(p) handleJoin(p); }
+  else if(response){ const p=dec(response); if(p) handleResponse(p); }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>honja v nolgi — 혼자잘놀기</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Gowun+Batang:wght@400;700&family=Modak&family=Nanum+Pen+Script&display=swap" rel="stylesheet">
+  <style>
+    :root { --ink:#20201e; --paper:#f7f1e5; --pink:#ff647c; --blue:#58b9db; --yellow:#ffd64c; --green:#b5d974; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--paper); font-family:'Gowun Batang', serif; overflow-x:hidden; }
+    button { font:inherit; color:inherit; cursor:pointer; }
+    .intro { min-height:100vh; display:grid; place-items:center; padding:30px; position:relative; overflow:hidden; background:#11add8; }
+    .grain { position:absolute; inset:0; opacity:.12; pointer-events:none; background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.45'/%3E%3C/svg%3E"); }
+    .doodle { position:absolute; font:3rem 'Nanum Pen Script'; animation:float 4s ease-in-out infinite; }
+    .doodle.one { left:11%; top:19%; color:var(--pink); transform:rotate(-18deg); } .doodle.two { right:13%; bottom:18%; color:var(--blue); transform:rotate(15deg); animation-delay:-1.5s; }
+    @keyframes float { 50% { translate:0 -12px; } }
+    .intro-card { text-align:center; position:relative; z-index:1; }
+    .intro h1 { margin:0; color:#f7ebf4; font:clamp(4.7rem,14vw,10.5rem)/.76 'Modak', cursive; letter-spacing:-.07em; transform:rotate(-3deg); -webkit-text-stroke:clamp(2px,.35vw,5px) var(--ink); paint-order:stroke fill; text-shadow:clamp(3px,.55vw,8px) clamp(3px,.55vw,8px) 0 rgba(32,32,30,.32); }
+    .intro h1 .v-wrap { display:inline-grid; position:relative; margin:0 -.04em; }
+    .intro h1 .check { font:700 .62em/1 Arial, sans-serif; letter-spacing:0; }
+    .intro h1 small { position:absolute; top:-.55em; left:50%; transform:translateX(-50%) rotate(4deg); min-width:2.4em; padding:.08em .2em .14em; border:2px solid var(--ink); border-radius:50%; background:var(--ink); white-space:nowrap; font:1.25rem 'Gaegu'; letter-spacing:0; color:#f7ebf4; }
+    .intro p { margin:42px 0 25px; color:#fffdf6; font:1.35rem 'Gaegu', cursive; letter-spacing:.07em; text-shadow:1px 1px 0 var(--ink); }
+    .start { border:2px solid var(--ink); border-radius:50%; background:var(--yellow); width:98px; height:98px; font:2rem/1 'Modak'; transform:rotate(8deg); box-shadow:4px 4px 0 var(--ink); transition:.2s; }
+    .start:hover { transform:rotate(-5deg) scale(1.07); box-shadow:7px 7px 0 var(--ink); }
+    .map-screen { display:none; min-height:100vh; padding:28px clamp(20px,6vw,90px) 60px; }
+    .map-screen.active { display:block; animation:appear .7s ease; } @keyframes appear { from { opacity:0; transform:translateY(15px); } }
+    .topline { display:flex; justify-content:space-between; align-items:center; border-bottom:2px dashed var(--ink); padding-bottom:15px; }
+    .logo { font:700 2rem 'Gaegu'; transform:rotate(-2deg); } .tag { font:1.05rem 'Gaegu'; }
+    .map-layout { display:grid; grid-template-columns:minmax(300px,1.1fr) minmax(320px,.9fr); gap:clamp(25px,6vw,100px); max-width:1160px; margin:45px auto 0; align-items:center; }
+    .map-copy h2 { margin:0; font:700 clamp(3rem,7vw,5.4rem)/.9 'Gaegu'; letter-spacing:-.05em; } .map-copy p { font-size:1.05rem; line-height:1.9; }
+    .map-note { display:inline-block; font:1.3rem 'Nanum Pen Script'; color:var(--pink); transform:rotate(-5deg); }
+    .seoul-map { width:100%; filter:drop-shadow(5px 7px 0 rgba(32,32,30,.12)); }
+    .district { fill:#fffdf6; stroke:var(--ink); stroke-width:3; stroke-linejoin:round; transition:.2s; cursor:pointer; }
+    .district:hover, .district.selected { fill:var(--yellow); transform:translate(-4px,-4px); } .district:nth-of-type(2n):hover { fill:var(--blue); }
+    .district-name { pointer-events:none; font:700 18px 'Gaegu'; text-anchor:middle; }
+    .district-strip { display:none; max-width:930px; margin:15px auto 42px; padding:18px 10px 12px; text-align:center; border-top:2px dashed var(--ink); border-bottom:2px dashed var(--ink); background:#fffdf6; }.district-strip.show { display:block; animation:appear .35s ease; }.district-strip p { margin:0 0 8px; color:var(--pink); font:1.25rem 'Nanum Pen Script'; }.nearby { display:flex; align-items:center; justify-content:center; gap:clamp(8px,2.5vw,35px); min-height:70px; font:1.32rem 'Gaegu'; }.nearby .neighbor { opacity:.8; transform:rotate(-2deg); }.nearby .neighbor:nth-child(2) { transform:rotate(2deg); }.nearby .chosen { display:grid; place-items:center; width:76px; height:64px; border:3px solid var(--ink); border-radius:50%; background:var(--yellow); font:700 1.55rem 'Gaegu'; transform:rotate(-4deg); box-shadow:3px 3px 0 var(--ink); }
+    .course-panel { display:none; max-width:980px; margin:38px auto 0; padding:28px; border:3px solid var(--ink); background:#fffdf6; box-shadow:8px 8px 0 var(--blue); transform:rotate(-.35deg); }
+    .course-panel.show { display:block; animation:appear .35s ease; } .course-kicker { font:1.4rem 'Nanum Pen Script'; color:var(--pink); margin:0; }
+    .course-panel h3 { font:700 clamp(2.5rem,5vw,4rem)/1 'Gaegu'; margin:0 0 16px; } .course-grid { display:grid; grid-template-columns:1fr 1.15fr; gap:25px; }
+    .route { border:2px dashed var(--ink); padding:15px; background:#f9f5ea; font:1.35rem/1.5 'Gaegu'; } .route strong { color:var(--pink); }
+    .course-panel p { line-height:1.75; margin:0; } .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }.chip { border:1.5px solid var(--ink); border-radius:99px; padding:5px 12px; font:1rem 'Gaegu'; background:var(--green); }
+    .guide { margin-top:26px; padding:19px 20px; border:2px solid var(--ink); background:#dff1f6; transform:rotate(.25deg); }.guide h4 { margin:0 0 10px; font:700 1.75rem 'Gaegu'; }.guide p { font-size:.92rem; }.guide-list { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:13px; }.guide-item { padding:9px 10px; background:#fffdf6; border:1.5px dashed var(--ink); font:.98rem/1.25 'Gaegu'; }.guide-item b { display:block; font-size:1.15rem; color:var(--pink); }
+    .share { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:25px; padding-top:18px; border-top:2px dashed var(--ink); }.share b { font:1.35rem 'Gaegu'; }.share button { border:2px solid var(--ink); padding:10px 17px; background:var(--pink); color:white; font:700 1.05rem 'Gaegu'; box-shadow:3px 3px 0 var(--ink); }
+    .toast { position:fixed; bottom:25px; left:50%; transform:translateX(-50%) translateY(130px); padding:12px 18px; background:var(--ink); color:white; border-radius:50px; transition:.25s; z-index:4; font:1rem 'Gaegu'; }.toast.on { transform:translateX(-50%) translateY(0); }
+    @media(max-width:720px) { .map-layout,.course-grid,.guide-list { grid-template-columns:1fr; } .map-layout { margin-top:30px; } .map-copy { text-align:center; }.topline .tag { display:none; }.share { align-items:flex-start; flex-direction:column; }.nearby { gap:8px; font-size:1rem; }.nearby .chosen { width:63px; height:55px; font-size:1.25rem; } }
+  </style>
+</head>
+<body>
+  <main class="intro" id="intro"><div class="grain"></div><div class="doodle one">♥ 나랑 놀자</div><div class="doodle two">오늘 어디 갈래?</div><section class="intro-card"><h1>honja<span class="v-wrap"><small>잘</small><span class="check">✓</span></span>nolgi</h1><p>혼자 있는 시간이 제일 재밌는 약속이 되도록</p><button class="start" id="startButton" type="button">GO</button></section></main>
+  <main class="map-screen" id="app" hidden><header class="topline"><div class="logo">honja <i>✓</i> nolgi</div><div class="tag">삐뚤빼뚤, 나만의 서울 혼놀 지도</div></header><div class="map-layout"><section class="map-copy"><span class="map-note">마음을 끄는 동네를 콕!</span><h2>오늘은<br>어디에서<br>놀아볼까?</h2><p>각 구를 눌러, 혼자 걷고 쉬고 구경하기 좋은<br>작은 코스를 발견해봐요.</p></section>
+  <svg class="seoul-map" viewBox="0 0 620 540" aria-label="서울 25개 자치구 지도">
+   <path d="M93 219 L106 176 L143 169 L162 137 L213 141 L224 92 L266 82 L275 42 L323 45 L342 28 L388 43 L409 83 L461 92 L486 129 L535 150 L552 195 L523 231 L545 273 L520 305 L507 355 L469 376 L457 431 L414 452 L388 491 L335 484 L293 508 L244 482 L197 490 L168 457 L124 452 L112 407 L83 388 L94 344 L67 314 L82 267 Z" fill="#f3d0bc" stroke="#20201e" stroke-width="5" stroke-linejoin="round"/>
+   <g id="districts">
+    <path class="district" d="M274 44 L323 45 L333 92 L310 112 L271 100 Z"/><text class="district-name" x="302" y="76">도봉구</text>
+    <path class="district" d="M333 44 L388 43 L409 83 L394 136 L351 140 L333 92 Z"/><text class="district-name" x="371" y="91">노원구</text>
+    <path class="district" d="M224 92 L271 100 L310 112 L294 167 L249 173 L220 140 Z"/><text class="district-name" x="266" y="138">강북구</text>
+    <path class="district" d="M310 112 L351 140 L342 190 L297 198 L294 167 Z"/><text class="district-name" x="320" y="163">성북구</text>
+    <path class="district" d="M394 136 L461 92 L486 129 L480 190 L424 205 L381 177 Z"/><text class="district-name" x="438" y="159">중랑구</text>
+    <path class="district" d="M162 137 L220 140 L249 173 L231 221 L174 218 L143 169 Z"/><text class="district-name" x="192" y="180">은평구</text>
+    <path class="district" data-place="jongno" d="M249 173 L294 167 L297 198 L271 233 L231 221 Z"/><text class="district-name" x="265" y="200">종로구</text>
+    <path class="district" data-place="dongmyo" d="M297 198 L342 190 L381 177 L386 228 L349 247 L313 237 Z"/><text class="district-name" x="344" y="215">동대문구</text>
+    <path class="district" data-place="seongsu" d="M386 228 L424 205 L480 190 L482 245 L439 277 L386 270 Z"/><text class="district-name" x="432" y="241">성동구</text>
+    <path class="district" d="M480 190 L535 150 L552 195 L523 231 L482 245 Z"/><text class="district-name" x="518" y="200">광진구</text>
+    <path class="district" d="M535 150 L552 195 L523 231 L545 273 L519 290 L482 245 Z"/><text class="district-name" x="525" y="247">강동구</text>
+    <path class="district" d="M143 169 L174 218 L154 259 L103 252 L93 219 L106 176 Z"/><text class="district-name" x="128" y="221">강서구</text>
+    <path class="district" d="M174 218 L231 221 L232 264 L191 289 L154 259 Z"/><text class="district-name" x="194" y="254">서대문구</text>
+    <path class="district" data-place="hongdae" d="M154 259 L191 289 L232 264 L273 282 L254 319 L198 319 L158 301 Z"/><text class="district-name" x="212" y="293">마포구</text>
+    <path class="district" d="M271 233 L313 237 L321 273 L288 290 L254 276 Z"/><text class="district-name" x="289" y="263">중구</text>
+    <path class="district" data-place="itaewon" d="M288 290 L321 273 L349 247 L386 270 L374 309 L325 325 Z"/><text class="district-name" x="335" y="294">용산구</text>
+    <path class="district" d="M386 270 L439 277 L482 245 L519 290 L487 326 L430 332 L374 309 Z"/><text class="district-name" x="440" y="303">송파구</text>
+    <path class="district" d="M94 344 L124 318 L158 301 L198 319 L188 362 L136 373 L94 362 Z"/><text class="district-name" x="143" y="342">양천구</text>
+    <path class="district" data-place="yeouido" d="M198 319 L254 319 L270 356 L230 387 L188 362 Z"/><text class="district-name" x="229" y="352">영등포구</text>
+    <path class="district" d="M94 362 L136 373 L168 410 L124 452 L112 407 Z"/><text class="district-name" x="137" y="402">구로구</text>
+    <path class="district" d="M136 373 L188 362 L230 387 L220 435 L168 457 L168 410 Z"/><text class="district-name" x="188" y="414">금천구</text>
+    <path class="district" d="M254 319 L325 325 L335 370 L292 397 L270 356 Z"/><text class="district-name" x="299" y="357">동작구</text>
+    <path class="district" d="M220 435 L292 397 L335 428 L293 508 L244 482 L197 490 L168 457 Z"/><text class="district-name" x="255" y="454">관악구</text>
+    <path class="district" data-place="sinsa" d="M335 370 L374 309 L430 332 L457 431 L414 452 L357 433 Z"/><text class="district-name" x="393" y="382">강남구</text>
+    <path class="district" d="M292 397 L335 370 L357 433 L414 452 L388 491 L335 484 L293 508 Z"/><text class="district-name" x="347" y="452">서초구</text>
+   </g>
+  </svg></div>
+  <section class="district-strip" id="districtStrip" aria-live="polite"><p>여기서 이어서 놀아볼까?</p><div class="nearby" id="nearby"></div></section>
+  <section class="course-panel" id="panel"><p class="course-kicker" id="kicker">오늘의 혼놀</p><h3 id="courseTitle"></h3><div class="course-grid"><div class="route" id="route"></div><div><p id="description"></p><div class="chips" id="chips"></div></div></div><aside class="guide"><h4>혼자라서 더 편한 이동 팁 ✦</h4><p><b>어디를 갈지</b>뿐 아니라 <b>어떻게 걸을지</b>를 알면 낯선 동네도 부담 없이 즐길 수 있어요. 큰길·골목·쉬어갈 곳을 연결해, 내 속도로 가보세요.</p><div class="guide-list" id="guideList"></div></aside><div class="share"><b>이 동네에서의 나만의 한 끼·한 장면도 남겨주세요!</b><button onclick="shareCourse()">내 혼놀 코스 공유하기 ↗</button></div></section></main>
+  <div class="toast" id="toast">좋아! 나만의 코스를 적어볼 준비 중이에요 ♡</div>
+  <script>
+   const places={jongno:{area:'종로 · 안국',title:'안국역 → 북촌 한옥마을',time:'약 10분 · 604m',route:'안국역 3호선<br>→ 북촌로4길<br>→ 재동초등학교 앞<br>→ <strong>북촌 한옥마을</strong>',desc:'짧고 부담 없는 한옥마을 진입 코스. 북촌로4길을 천천히 올라가며 마음에 드는 카페나 작은 소품숍에 들러보세요.',chips:['한옥 산책','필름 카메라','고요한 카페']},seongsu:{area:'성동 · 성수',title:'성수역 → 서울숲',time:'약 33분 · 2,142m',route:'성수역 4번 출구<br>→ 성수일로<br>→ 왕십리로4길<br>→ <strong>서울숲</strong>',desc:'팝업과 편집숍, 카페를 만나는 긴 산책. 목적지를 급히 정하지 말고, 발걸음이 멈추는 곳마다 체크인해 보세요.',chips:['팝업 구경','혼자 브런치','숲 산책']},hongdae:{area:'마포 · 홍대',title:'홍대입구역 → 연남동',time:'약 15분 · 1,013m',route:'홍대입구역 3번 출구<br>→ 동교로<br>→ 성미산로<br>→ <strong>연남동 골목</strong>',desc:'북적이는 홍대 중심가에서 느긋한 연남동 골목으로 넘어가는 길. 작은 책방과 독립 상점 사이에서 오래 머물러도 좋아요.',chips:['독립서점','골목 사진','혼밥']},itaewon:{area:'용산 · 이태원',title:'이태원역 → 경리단길',time:'약 21분 · 1,078m',route:'이태원역 2번 출구<br>→ 이태원로<br>→ 이태원로27가길<br>→ <strong>경리단길</strong>',desc:'언덕과 골목이 섞인 이국적인 산책. 낯선 음악이 흘러나오는 가게와 마주치면 잠깐의 용기로 문을 열어보세요.',chips:['이국적인 맛','LP 음악','골목 탐험']},yeouido:{area:'영등포 · 여의도',title:'여의도역 → 한강공원',time:'약 21분 · 1,269m',route:'여의도역 5번 출구<br>→ 여의나루로4길<br>→ 여의동로<br>→ <strong>여의도 한강공원</strong>',desc:'빌딩 사이를 지나 탁 트인 강변에 닿는 코스. 좋아하는 간식 하나와 이어폰을 챙기면 혼자만의 피크닉이 완성돼요.',chips:['한강 피크닉','노을 보기','러닝']},sinsa:{area:'강남 · 신사',title:'신사역 → 가로수길',time:'약 10분 · 661m',route:'신사역 4번 출구<br>→ 강남대로<br>→ 도산대로<br>→ <strong>가로수길</strong>',desc:'짧고 선명한 쇼핑·카페 코스. 한 곳만 정해두고 천천히 둘러보는 나만의 취향 탐험에 어울려요.',chips:['빈티지 쇼핑','디저트','전시']},dongmyo:{area:'종로 · 동묘',title:'동묘앞역 → 창신동 문구완구시장',time:'약 7분 · 381m',route:'동묘앞역 7번 출구<br>→ 종로<br>→ 종로54길<br>→ <strong>창신동문구완구시장</strong>',desc:'어릴 적 마음을 꺼내보는 가장 짧은 산책. 알록달록한 물건을 천천히 구경하고, 작은 선물 하나를 나에게 건네보세요.',chips:['보물찾기','레트로','문구 쇼핑']},mangwon:{area:'마포 · 망원',title:'망원역 → 망원시장',time:'약 10분 · 638m',route:'망원역 2번 출구<br>→ 월드컵로<br>→ 망원로<br>→ <strong>망원시장</strong>',desc:'생활의 온기가 있는 시장 산책. 먹고 싶은 것을 하나씩 골라 나만의 미니 피크닉 꾸러미를 만들어봐요.',chips:['시장 먹방','로컬 구경','혼자 피크닉']}};
+   function enterApp(){const intro=document.getElementById('intro'),app=document.getElementById('app');intro.hidden=true;app.hidden=false;app.classList.add('active');window.scrollTo({top:0,behavior:'smooth'});}
+   document.getElementById('startButton').addEventListener('click',enterApp);
+   const baseTips=['<b>출발역에서 시작</b>대중교통으로 마음 편히 도착해요','<b>지도 앱 저장</b>낯선 골목도 미리 경로를 확인해요','<b>보조배터리 챙기기</b>지도·사진·결제까지 여유롭게'];
+   const localTips={jongno:'<b>오전·늦은 오후 추천</b>사람이 몰리기 전, 한옥 골목을 천천히',seongsu:'<b>운동화는 필수</b>팝업과 서울숲까지 오래 걷는 날',hongdae:'<b>큰길에서 골목으로</b>동교로를 기준으로 천천히 들어가요',itaewon:'<b>언덕은 천천히</b>회나무로 방향은 편한 신발이 좋아요',yeouido:'<b>물·간식 챙기기</b>강변에 오래 머물 계획이라면 필수',sinsa:'<b>오전에 카페 들르기</b>인기 있는 매장도 조금 더 여유롭게',dongmyo:'<b>작은 에코백</b>마음에 드는 문구·장난감을 담아가요',mangwon:'<b>빈손으로 출발</b>시장 간식으로 나만의 피크닉을 완성!'};
+   const nearbyDistricts={
+    '도봉구':['노원구','강북구','성북구','중랑구'],'노원구':['도봉구','강북구','성북구','중랑구'],'강북구':['도봉구','성북구','종로구','노원구'],'성북구':['강북구','종로구','동대문구','노원구'],'중랑구':['노원구','동대문구','성동구','광진구'],
+    '은평구':['서대문구','마포구','종로구','강서구'],'서대문구':['은평구','마포구','종로구','중구'],'마포구':['서대문구','영등포구','용산구','은평구'],'종로구':['성북구','중구','서대문구','동대문구'],'중구':['종로구','용산구','성동구','동대문구'],'동대문구':['종로구','성북구','성동구','중랑구'],'성동구':['동대문구','광진구','중구','강남구'],'광진구':['성동구','중랑구','강동구','송파구'],'강동구':['광진구','송파구','강남구','성동구'],
+    '강서구':['양천구','구로구','마포구','영등포구'],'양천구':['강서구','영등포구','구로구','동작구'],'영등포구':['마포구','동작구','양천구','구로구'],'구로구':['금천구','양천구','영등포구','관악구'],'금천구':['구로구','관악구','영등포구','동작구'],'동작구':['영등포구','관악구','서초구','용산구'],'관악구':['금천구','동작구','서초구','구로구'],'용산구':['중구','동작구','서초구','마포구'],'서초구':['강남구','관악구','동작구','용산구'],'강남구':['서초구','송파구','성동구','강동구'],'송파구':['강동구','강남구','광진구','성동구']
+   };
+   function showDistrictStrip(name){const close=nearbyDistricts[name]||['종로구','마포구','성동구','강남구'],left=close.slice(0,2),right=close.slice(2,4);document.getElementById('nearby').innerHTML=[...left.map(n=>`<span class="neighbor">${n}</span>`),`<span class="chosen">${name}</span>`,...right.map(n=>`<span class="neighbor">${n}</span>`)].join('');document.getElementById('districtStrip').classList.add('show');}
+   document.querySelectorAll('.district').forEach(el=>el.addEventListener('click',()=>{document.querySelectorAll('.district').forEach(x=>x.classList.remove('selected'));el.classList.add('selected');const name=el.nextElementSibling?.textContent||'서울',id=el.dataset.place,p=places[id],panel=document.getElementById('panel');showDistrictStrip(name);if(!p){panel.classList.remove('show');return;}document.getElementById('kicker').textContent=p.area+' · '+p.time;document.getElementById('courseTitle').textContent=p.title;document.getElementById('route').innerHTML=p.route;document.getElementById('description').textContent=p.desc;document.getElementById('chips').innerHTML=p.chips.map(c=>`<span class="chip"># ${c}</span>`).join('');document.getElementById('guideList').innerHTML=[baseTips[0],localTips[id],...baseTips.slice(1)].map(t=>`<div class="guide-item">${t}</div>`).join('');panel.classList.add('show');setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'center'}),80)}));
+   function shareCourse(){const t=document.getElementById('toast');t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2600)}
+  </script>
+</body>
+</html>

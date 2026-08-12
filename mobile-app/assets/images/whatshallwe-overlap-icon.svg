@@ -1,6 +1,0 @@
-<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1024" height="1024" rx="220" fill="#F4F0E6"/>
-  <!-- The vesica piscis: just the shared area of two circles, not the full Venn diagram. -->
-  <path d="M512 254C281 377 281 647 512 770C743 647 743 377 512 254Z" fill="#292824"/>
-  <path d="M512 302C337 403 337 621 512 722C687 621 687 403 512 302Z" fill="#DE7967"/>
-</svg>

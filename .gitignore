@@ -5,6 +5,10 @@
 # logs
 *.log
 
+# dependencies and Expo build state
+node_modules/
+.expo/
+
 # local env files
 .env*.local
 

@@ -28,8 +28,8 @@ const schemeFromBundleId = `manus${timestamp}`;
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: "뭐할까?",
-  appSlug: "what-shall-we-do",
+  appName: "mohalgga",
+  appSlug: "what-shall-we-do-iphone-20260813",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
   logoUrl: "",
@@ -83,7 +83,12 @@ const config: ExpoConfig = {
       },
     ],
   ],
-  experiments: {
+  extra: {
+    eas: {
+      projectId: "4c6d2b8b-caec-48fe-9afc-6dc459c08ccb",
+    },
+  },
+    experiments: {
     typedRoutes: true,
     reactCompiler: true,
   },

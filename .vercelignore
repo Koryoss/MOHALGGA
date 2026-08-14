@@ -1,0 +1,15 @@
+node_modules
+ios
+android
+dist
+.expo
+.git
+archive
+_to_delete
+*.docx
+*.pdf
+*.zip
+*.tgz
+.env
+.env.*
+!.env.example

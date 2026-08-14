@@ -1,0 +1,2 @@
+import { badRequest, joinRoom, validName } from "../../_shared/rooms";
+export default async function handler(req: any, res: any) { if (req.method !== "POST") return res.status(405).json({ ok: false }); const roomId = Array.isArray(req.query.roomId) ? req.query.roomId[0] : req.query.roomId; if (!roomId || !validName(req.body?.name)) return badRequest(res, "이름을 1~40자로 입력해 주세요."); const participant = await joinRoom(roomId, req.body.name.trim()); if (!participant) return badRequest(res, "존재하지 않는 방이에요.", 404); res.status(201).json({ ok: true, participant }); }

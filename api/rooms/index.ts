@@ -1,0 +1,2 @@
+import { badRequest, createRoom, validName } from "../_shared/rooms";
+export default async function handler(req: any, res: any) { if (req.method !== "POST") return res.status(405).json({ ok: false }); if (!validName(req.body?.name)) return badRequest(res, "이름을 1~40자로 입력해 주세요."); try { const room = await createRoom(req.body.name.trim()); res.status(201).json({ ok: true, roomId: room.roomId, participant: room.participant }); } catch (error) { console.error(error); badRequest(res, "방을 만들지 못했어요. 다시 시도해 주세요.", 500); } }

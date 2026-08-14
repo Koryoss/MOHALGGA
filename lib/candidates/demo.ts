@@ -26,7 +26,6 @@ async function main() {
   console.log("\n--- 3. detectPlatform ---");
   console.log("naver map:", detectPlatform("https://map.naver.com/p/entry/place/12345?query=스시코우지"));
   console.log("catchtable:", detectPlatform("https://app.catchtable.co.kr/ct/shop/mira-korean-dining"));
-  console.log("instagram (not implemented):", detectPlatform("https://www.instagram.com/p/abc123/"));
   console.log("malformed:", detectPlatform("not a url"));
 
   console.log("\n--- 4. createCandidateFromUrl, no fetcher (URL-only fallback) ---");
@@ -57,9 +56,6 @@ async function main() {
   });
   console.log(failedResult);
 
-  console.log("\n--- 7. unsupported platform (Instagram) still yields a usable Candidate ---");
-  const igResult = await createCandidateFromUrl("https://www.instagram.com/p/abc123/");
-  console.log(igResult);
 
   console.log("\n--- 8. session integration, no platform-specific fields leak through ---");
   let session: CandidateSession = { sessionId: "s-1", candidates: [] };
@@ -72,7 +68,6 @@ async function main() {
 
   console.log("\n--- 9. errorType taxonomy across failure modes ---");
   console.log("malformed string:", (await createCandidateFromUrl("not a url")).errorType);
-  console.log("unsupported platform:", (await createCandidateFromUrl("https://www.instagram.com/p/abc123/")).errorType);
   console.log("extraction incomplete (no fetcher):", (await createCandidateFromUrl("https://map.naver.com/p/entry/place/12345")).errorType);
   console.log(
     "fetch failed (fetcher throws):",

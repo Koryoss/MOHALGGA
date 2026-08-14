@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -15,12 +16,22 @@ import {
 } from "react-native";
 
 import { createCandidateFromUrl, type ImportErrorType } from "@/lib/candidates";
-import Svg, { Path } from "react-native-svg";
+import {
+  addRoomCandidate,
+  castRoomVote,
+  createRoom,
+  fetchRoom,
+  loadSession,
+  loadSoloRoomId,
+  saveSoloRoomId,
+  shareRoomInvite,
+  roomInviteUrl,
+  type RoomSession,
+  type RoomState,
+} from "@/lib/rooms/client";
 
-type Mode = "solo" | "duo" | "trio" | "group";
-type Situation = "eat" | "play" | "chill" | "any";
 type Vote = -2 | 0 | 1;
-type Screen = "mode" | "setup" | "match";
+type Screen = "start" | "match";
 type Candidate = {
   id: string;
   title: string;
@@ -30,25 +41,21 @@ type Candidate = {
 };
 type Memory = Record<string, { uses: number; items: Record<string, { sum: number; count: number; decisions: number }> }>;
 
-const MODES: { id: Mode; short: string; label: string }[] = [
-  { id: "solo", short: "혼자", label: "혼자" },
-  { id: "duo", short: "둘이", label: "연인/친구 1명" },
-  { id: "trio", short: "셋이", label: "셋이" },
-  { id: "group", short: "더 많이", label: "더 많이" },
-];
-const SITUATIONS: { id: Situation; label: string }[] = [
-  { id: "eat", label: "먹기" }, { id: "play", label: "놀기" },
-  { id: "chill", label: "쉬기" }, { id: "any", label: "아무거나" },
-];
-const POOLS: Record<Mode, Record<Situation, string[]>> = {
-  solo: { eat: ["라멘", "제육볶음", "초밥", "브런치", "떡볶이"], play: ["영화", "산책", "서점", "전시", "코인노래방"], chill: ["카페", "공원 산책", "책 읽기", "드라이브", "찜질방"], any: ["산책", "카페", "영화", "서점", "전시"] },
-  duo: { eat: ["라멘", "제육볶음", "초밥", "파스타", "마라탕"], play: ["볼링", "전시", "보드게임 카페", "영화", "방탈출"], chill: ["카페", "산책", "드라이브", "공원", "한강 피크닉"], any: ["라멘", "카페", "전시", "볼링", "영화"] },
-  trio: { eat: ["삼겹살", "초밥", "마라탕", "피자", "닭갈비"], play: ["볼링", "보드게임 카페", "방탈출", "코인노래방", "당구"], chill: ["대형 카페", "한강", "공원", "만화카페", "드라이브"], any: ["초밥", "볼링", "보드게임 카페", "카페", "방탈출"] },
-  group: { eat: ["삼겹살", "치킨", "피자", "곱창", "닭갈비"], play: ["방탈출", "볼링", "보드게임 카페", "노래방", "스크린야구"], chill: ["대형 카페", "한강 피크닉", "공원", "루프탑", "드라이브"], any: ["삼겹살", "치킨", "방탈출", "볼링", "보드게임 카페"] },
-};
+// Cold-start suggestion pool for the "다음엔 더 잘 골라줄게" learning card.
+// Was previously indexed by mode+situation (혼자/둘이/셋이/더 많이 × 먹기/놀기/쉬기/아무거나);
+// now that 둘이/셋이/더 많이 live in the shared-room flow (app/room.tsx) instead of here,
+// only the 혼자·아무거나 pool is reachable, so it's kept as a flat constant.
+const LEARNING_POOL = ["산책", "카페", "영화", "서점", "전시"];
 const MEMORY_KEY = "whatshallwe-memory";
 const DECISIONS_KEY = "whatshallwe-decisions";
+// Single local voter key for votes/answered bookkeeping. 혼자 always has exactly
+// one voter, so this replaces the old participants[]/voterIndex pass-the-phone state.
+const ME = "나";
 const ink = "#292824";
+const candidateApiUrl = process.env.EXPO_PUBLIC_CANDIDATE_API_URL;
+
+const sharedPlatform = (url: string) => url.includes("catchtable") ? "catchtable" : "naver-map";
+const sharedPlaceName = (line: string) => line.replace(" 어때요?", "").replace(" 어때요!", "").replace("에서 확인해보세요!", "").replace("에서 확인해보세요.", "").trim();
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -56,18 +63,26 @@ function HomeButton({ onPress }: { onPress: () => void }) {
   return <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel="처음으로" hitSlop={10} style={styles.homeButton}><View style={styles.homeArc}/><View style={styles.homeRoof}/><View style={styles.homeWall}><View style={styles.homeDoor}/></View></Pressable>;
 }
 
-function InviteButton() {
-  return <Pressable onPress={() => Alert.alert("친구 초대", "Expo Go 버전에서는 기기 안에서 먼저 후보를 골라볼 수 있어요.")} accessibilityRole="button" accessibilityLabel="친구 초대" style={styles.inviteButton}><Text style={styles.inviteLabel}>친구 초대</Text><View style={styles.inviteSketch}><View style={styles.inviteSketchBody}/><View style={styles.inviteSketchTop}/><View style={styles.inviteSketchBottom}/></View></Pressable>;
+function InviteButton({ roomId }: { roomId: string | null }) {
+  const invite = async () => {
+    if (!roomId) return;
+    const result = await shareRoomInvite(roomId);
+    if (result === "copied") Alert.alert("링크를 복사했어요", "카카오톡이나 메시지에 붙여넣어 친구에게 보내세요.");
+    else if (result === "shown") Alert.alert("공유 링크", roomInviteUrl(roomId), [{ text: "확인" }]);
+  };
+  return <Pressable onPress={invite} accessibilityRole="link" accessibilityLabel="친구에게 이 방 공유" style={styles.inviteButton}><Text style={styles.inviteLabel}>친구 초대</Text><View style={styles.inviteSketch}><View style={styles.inviteSketchBody}/><View style={styles.inviteSketchTop}/><View style={styles.inviteSketchBottom}/></View></Pressable>;
 }
 
 export default function Home() {
-  const [screen, setScreen] = useState<Screen>("mode");
-  const [mode, setMode] = useState<Mode>("solo");
-  const [situation, setSituation] = useState<Situation>("any");
-  const [partner, setPartner] = useState("");
+  const [screen, setScreen] = useState<Screen>("start");
+  const [nameInput, setNameInput] = useState("");
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [hasSavedSolo, setHasSavedSolo] = useState(false);
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [session, setSession] = useState<RoomSession | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [votes, setVotes] = useState<Record<string, Record<string, Vote>>>({});
-  const [voterIndex, setVoterIndex] = useState(0);
   const [memory, setMemory] = useState<Memory>({});
   const [showResult, setShowResult] = useState(false);
   const [decided, setDecided] = useState(false);
@@ -75,35 +90,84 @@ export default function Home() {
   const [importUrl, setImportUrl] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
   const [importErrorType, setImportErrorType] = useState<ImportErrorType | undefined>(undefined);
-  const [fallback, setFallback] = useState<{ url: string; title: string } | null>(null);
+  const [fallback, setFallback] = useState<{ url: string; title: string; sourcePlatform?: string } | null>(null);
   const cardX = useRef(new Animated.Value(0)).current;
   const learnX = useRef(new Animated.Value(0)).current;
+  // Resolved once on mount so "혼자 바로 시작" can reuse the saved room
+  // synchronously without waiting on another AsyncStorage round trip.
+  const soloRoom = useRef<{ roomId: string; session: RoomSession } | null>(null);
 
   useEffect(() => { AsyncStorage.getItem(MEMORY_KEY).then(value => { if (value) setMemory(JSON.parse(value)); }).catch(() => undefined); }, []);
-  const relation = `${mode}::${partner.trim().toLowerCase() || "self"}`;
-  const participantNames = useMemo(() => partner.split(/[,，]/).map(name => name.trim()).filter(Boolean), [partner]);
-  const participants = useMemo(() => (mode === "solo" || participantNames.length === 0) ? ["나"] : ["나", ...participantNames], [mode, participantNames]);
-  const currentVoter = participants[voterIndex] ?? participants[0];
-  const currentIndex = candidates.findIndex(c => votes[c.id]?.[currentVoter] === undefined);
-  const answered = candidates.filter(c => votes[c.id]?.[currentVoter] !== undefined).length;
-  const voterDone = candidates.length > 0 && answered === candidates.length;
-  const allAnswered = voterDone && voterIndex === participants.length - 1;
-  const learning = useMemo(() => POOLS[mode][situation].filter(x => !candidates.some(c => c.title === x)).slice(0, 5), [mode, situation, candidates]);
+  useEffect(() => {
+    loadSoloRoomId().then(async (savedRoomId) => {
+      if (!savedRoomId) return;
+      const savedSession = await loadSession(savedRoomId);
+      if (!savedSession) return;
+      soloRoom.current = { roomId: savedRoomId, session: savedSession };
+      setHasSavedSolo(true);
+    }).catch(() => undefined);
+  }, []);
+
+  const relation = "solo::self";
+  const currentIndex = candidates.findIndex(c => votes[c.id]?.[ME] === undefined);
+  const answered = candidates.filter(c => votes[c.id]?.[ME] !== undefined).length;
+  const allAnswered = candidates.length > 0 && answered === candidates.length;
+  const learning = useMemo(() => LEARNING_POOL.filter(x => !candidates.some(c => c.title === x)).slice(0, 5), [candidates]);
 
   const saveMemory = (next: Memory) => { setMemory(next); AsyncStorage.setItem(MEMORY_KEY, JSON.stringify(next)).catch(() => undefined); };
-  const makeCandidates = (nextSituation: Situation, selectedMode = mode, selectedPartner = partner) => {
-    const selectedRelation = `${selectedMode}::${selectedPartner.trim().toLowerCase() || "self"}`;
-    const history = memory[selectedRelation]?.items ?? {};
-    const pool = [...POOLS[selectedMode][nextSituation]].sort((a, b) => ((history[b]?.sum ?? 0) + (history[b]?.decisions ?? 0) * 2) - ((history[a]?.sum ?? 0) + (history[a]?.decisions ?? 0) * 2));
-    const picked = pool.slice(0, 3).map((title, i) => ({ id: `${i}-${uid()}`, title, source: history[title] ? "memory" as const : "starter" as const }));
-    setMode(selectedMode); setPartner(selectedPartner); setSituation(nextSituation); setCandidates(picked); setVotes({}); setVoterIndex(0); setShowResult(false); setDecided(false); setLearnIndex(null); setScreen("match");
+
+  const hydrateFromRoom = (room: RoomState, participantId: string) => {
+    setCandidates(room.candidates.map(c => ({ id: c.id, title: c.title, source: c.sourceUrl ? "url" : "manual", sourceUrl: c.sourceUrl ?? undefined })));
+    const nextVotes: Record<string, Record<string, Vote>> = {};
+    room.candidates.forEach(c => { const mine = c.votes[participantId]; if (mine !== undefined) nextVotes[c.id] = { [ME]: mine }; });
+    setVotes(nextVotes);
   };
+
+  const openMatch = () => { setShowResult(false); setDecided(false); setLearnIndex(null); setScreen("match"); };
+
+  const handleSoloStart = async () => {
+    if (starting) return;
+    setStartError(null); setStarting(true);
+    try {
+      if (soloRoom.current) {
+        const room = await fetchRoom(soloRoom.current.roomId, soloRoom.current.session.token);
+        hydrateFromRoom(room, soloRoom.current.session.id);
+        setRoomId(soloRoom.current.roomId); setSession(soloRoom.current.session);
+      } else {
+        const displayName = nameInput.trim() || "나";
+        const created = await createRoom(displayName);
+        await saveSoloRoomId(created.roomId);
+        soloRoom.current = created; setHasSavedSolo(true);
+        setRoomId(created.roomId); setSession(created.session);
+        setCandidates([]); setVotes({});
+      }
+      openMatch();
+    } catch (e) {
+      setStartError(e instanceof Error ? e.message : "여는 데 실패했어요. 다시 시도해 주세요.");
+    } finally {
+      setStarting(false);
+    }
+  };
+  const handleTogetherStart = async () => {
+    if (starting) return;
+    const displayName = nameInput.trim();
+    if (!displayName) { setStartError("친구에게 보일 이름을 입력해 주세요."); return; }
+    setStartError(null); setStarting(true);
+    try {
+      const created = await createRoom(displayName);
+      router.replace(`/room?id=${created.roomId}`);
+    } catch (e) {
+      setStartError(e instanceof Error ? e.message : "방을 만들지 못했어요. 다시 시도해 주세요.");
+      setStarting(false);
+    }
+  };
+
   const vote = (kind: Vote) => {
     const current = candidates[currentIndex]; if (!current) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setVotes(old => ({ ...old, [current.id]: { ...(old[current.id] ?? {}), [currentVoter]: kind } })); cardX.setValue(0);
+    setVotes(old => ({ ...old, [current.id]: { ...(old[current.id] ?? {}), [ME]: kind } })); cardX.setValue(0);
+    if (roomId && session) castRoomVote(roomId, session.token, current.id, kind).catch(() => undefined);
   };
-  const nextVoter = () => { setVoterIndex(i => Math.min(i + 1, participants.length - 1)); cardX.setValue(0); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); };
   const candidatePan = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onStartShouldSetPanResponderCapture: () => true,
@@ -147,30 +211,56 @@ export default function Home() {
   };
   const learnPan = useMemo(() => PanResponder.create({ onStartShouldSetPanResponder: () => true, onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 4 || Math.abs(g.dy) > 4, onPanResponderMove: (_, g) => learnX.setValue(g.dx), onPanResponderRelease: (_, g) => { if (g.dy < -55) remember(2); else if (g.dx > 60) remember(1); else if (g.dx < -60) remember(-2); else Animated.spring(learnX, { toValue: 0, useNativeDriver: true }).start(); }, onPanResponderTerminate: () => Animated.spring(learnX, { toValue: 0, useNativeDriver: true }).start() }), [learnIndex, learning]);
 
-  const addImportedCandidate = (title: string, source: Candidate["source"], sourcePlatform?: string, sourceUrl?: string) => {
+  const addImportedCandidate = async (title: string, source: Candidate["source"], sourcePlatform?: string, sourceUrl?: string) => {
     const trimmed = title.trim();
     if (!trimmed) return;
     if (sourceUrl && candidates.some(c => c.sourceUrl === sourceUrl)) return;
-    setCandidates(prev => [...prev, { id: uid(), title: trimmed, source, sourcePlatform, sourceUrl }]);
+    let id = uid();
+    if (roomId && session) {
+      try { id = await addRoomCandidate(roomId, session.token, trimmed, sourceUrl); }
+      catch { /* offline or server hiccup: still add locally so the swipe isn't blocked */ }
+    }
+    setCandidates(prev => [...prev, { id, title: trimmed, source, sourcePlatform, sourceUrl }]);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
   const submitImportUrl = async () => {
-    const url = importUrl.trim();
+    const pasted = importUrl.trim();
+    const lines = pasted.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const sharedUrl = pasted.match(/https?:\/\/[^\s\]\)]+/i)?.[0];
+    const naverSharedTitle = pasted.match(/\[?네이버지도\]?\s*([\s\S]*?)(?=\s*(?:서울|경기|인천|부산|대구|대전|광주|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주)\s|https?:\/\/|\[https?:\/\/)/i)?.[1]?.trim();
+    const catchtableSharedTitle = pasted.split(/캐치테이블에서 확인해보세요/i)[0]?.trim();
+    const sharedTitle = sharedUrl
+      ? (naverSharedTitle || (catchtableSharedTitle && !catchtableSharedTitle.includes("http") ? catchtableSharedTitle : lines.find(line => !line.includes(sharedUrl) && !["[네이버지도]", "네이버지도", "[카카오맵]", "카카오맵", "[캐치테이블]", "캐치테이블", "캐치테이블에서 확인해보세요!", "캐치테이블에서 확인해보세요"].includes(line) && !line.includes("http") && !["서울 ", "경기 ", "인천 ", "부산 ", "대구 ", "대전 ", "광주 ", "울산 ", "세종 ", "강원 ", "충북 ", "충남 ", "전북 ", "전남 ", "경북 ", "경남 ", "제주 "].some(prefix => line.startsWith(prefix)))))
+      : undefined;
+    if (sharedUrl && sharedTitle) {
+      await addImportedCandidate(sharedPlaceName(sharedTitle), "url", sharedPlatform(sharedUrl), sharedUrl);
+      setImportUrl("");
+      return;
+    }
+    const url = sharedUrl ?? pasted;
     setImportError(null); setImportErrorType(undefined);
-    if (!url) { setImportError("링크를 입력해줘."); return; }
+    if (!url) return;
+    if (candidateApiUrl) {
+      try {
+        const response = await fetch(`${candidateApiUrl}/api/candidate-link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+        const resolved = await response.json() as { ok: boolean; title?: string; sourcePlatform?: string };
+        if (resolved.ok && resolved.title) { await addImportedCandidate(resolved.title, "url", resolved.sourcePlatform, url); setImportUrl(""); return; }
+      } catch { /* fall back to local parsing */ }
+    }
     const result = await createCandidateFromUrl(url);
-    if (result.ok) {
-      addImportedCandidate(result.candidate.title, "url", result.candidate.sourcePlatform, result.candidate.sourceUrl);
+    const needsTitleConfirmation = result.errorType === "invalid_url" || result.errorType === "unsupported_platform" || result.candidate.title.includes("제목 미확인");
+    if (result.ok || !needsTitleConfirmation) {
+      await addImportedCandidate(result.candidate.title, "url", result.candidate.sourcePlatform, result.candidate.sourceUrl);
       setImportUrl("");
     } else {
       setImportError(result.reason ?? "장소 정보를 정확히 가져오지 못했어요. 장소 이름만 적어주세요.");
       setImportErrorType(result.errorType);
-      setFallback({ url, title: result.candidate.title });
+      setFallback({ url, title: result.candidate.title, sourcePlatform: result.candidate.sourcePlatform });
     }
   };
-  const confirmFallback = () => {
+  const confirmFallback = async () => {
     if (!fallback) return;
-    addImportedCandidate(fallback.title, "manual", "manual", fallback.url);
+    await addImportedCandidate(fallback.title, "manual", fallback.sourcePlatform ?? "manual", fallback.url);
     setFallback(null); setImportUrl(""); setImportError(null); setImportErrorType(undefined);
   };
   const cancelFallback = () => { setFallback(null); setImportError(null); setImportErrorType(undefined); setImportUrl(""); };
@@ -179,50 +269,30 @@ export default function Home() {
     setVotes(prev => { const next = { ...prev }; delete next[id]; return next; });
   };
 
-  if (screen === "mode") return <SafeAreaView style={styles.page}><View style={[styles.modePage, { justifyContent: "center" }]}><View style={[styles.modeTitleArea, { paddingTop: 0 }]}><Text style={styles.title}>누구랑 뭐할까?</Text><View style={styles.titleUnderline}/></View><View style={[styles.modeControlArea, { marginTop: 40 }]}><View style={styles.modeGrid}>{MODES.map((item, index) => <Pressable key={item.id} onPress={() => { if (item.id === "solo") makeCandidates("any", "solo", ""); else { setMode(item.id); setScreen("setup"); } }} style={[styles.modeChoice, styles.modeGridChoice, mode === item.id && styles.modeChoiceActive, { transform: [{ rotate: `${index % 2 === 0 ? -2 : 2}deg` }] }]}><Text style={styles.modeChoiceDots}>{"·".repeat(index + 1)}</Text><Text style={styles.modeChoiceText}>{item.short}</Text></Pressable>)}</View></View></View></SafeAreaView>;
-
-  if (screen === "setup") return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={[styles.setupPage, styles.setupPageTop]}><Text style={styles.setupTopTitle}>{mode === "group" ? "누구랑?" : `${MODES.find(item => item.id === mode)?.short} 뭐하지?`}</Text><View style={[styles.paper, styles.setupPaperFixed]}>{mode !== "solo" && <><Text style={styles.inputLabel}>{mode === "group" ? "참여자" : "누구랑?"}</Text><TextInput value={partner} onChangeText={setPartner} placeholder={mode === "group" ? "예: 민수, 지수, 소연" : mode === "trio" ? "예: 민수, 지수" : "예: 민수와"} placeholderTextColor="#a29e94" style={styles.input} />{mode === "group" && participantNames.length > 0 && <View style={styles.participantList}>{participantNames.map(name => <View key={name} style={styles.participantChip}><Text style={styles.participantChipText}>{name}</Text></View>)}</View>}</>}<Pressable style={styles.candidateStartButton} onPress={() => makeCandidates("any")}><Text style={styles.candidateStartText}>후보 넘겨보기 →</Text></Pressable></View></ScrollView><View style={styles.homeBottom}><HomeButton onPress={() => setScreen("mode")} /></View></SafeAreaView>;
+  if (screen === "start") return <SafeAreaView style={styles.page}><View style={[styles.modePage, { justifyContent: "center" }]}><View style={[styles.modeTitleArea, { paddingTop: 0 }]}><Text style={styles.title}>누구랑 뭐할까?</Text><View style={styles.titleUnderline}/></View><View style={[styles.modeControlArea, { marginTop: 40 }]}><Text style={styles.inputLabel}>내 이름</Text><TextInput value={nameInput} onChangeText={setNameInput} placeholder="예: 유진" placeholderTextColor="#a29e94" style={styles.input} /><Pressable style={[styles.candidateStartButton, starting && styles.disabled]} disabled={starting} onPress={handleSoloStart}><Text style={styles.candidateStartText}>{starting ? "여는 중…" : hasSavedSolo ? "혼자 이어서 하기" : "혼자 바로 시작"}</Text></Pressable><Pressable style={[styles.togetherButton, starting && styles.disabled]} disabled={starting} onPress={handleTogetherStart}><Text style={styles.togetherButtonText}>링크 만들어서 같이 하기</Text></Pressable>{startError && <Text style={styles.importErrorText}>{startError}</Text>}</View></View></SafeAreaView>;
 
   const current = candidates[currentIndex];
-return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={styles.matchPage}><View style={[styles.header, { justifyContent: "flex-end" }]}><InviteButton /></View><Text style={[styles.matchTitle, { textAlign: "center" }]}>{mode === "solo" ? "혼자" : partner || MODES.find(m => m.id === mode)?.short} 뭐 하지?</Text><View style={[styles.candidatesHead, { justifyContent: "flex-end" }]}><Text style={styles.progress}>{answered}/{candidates.length}</Text></View>{participants.length > 1 && <View style={styles.participantRow}>{participants.map(p => <View key={p} style={[styles.participantTag, p === currentVoter && !voterDone && styles.participantTagActive]}><Text style={styles.participantTagText}>{p}</Text></View>)}</View>}<View style={styles.importRow}><TextInput value={importUrl} onChangeText={setImportUrl} autoCapitalize="none" autoCorrect={false} style={styles.importInput} /><Pressable style={styles.importButton} onPress={submitImportUrl}><Text style={styles.importButtonText}>추가</Text></Pressable></View>{importError && !fallback && <Text style={styles.importErrorText}>{importError}</Text>}{fallback && <View style={styles.fallbackBox}><Text style={styles.importErrorText}>{importError}</Text><TextInput value={fallback.title} onChangeText={title => setFallback(f => f ? { ...f, title } : f)} placeholder="장소 이름만 적어줘" placeholderTextColor="#a29e94" style={styles.fallbackInput} /><View style={styles.fallbackButtons}><Pressable style={styles.fallbackConfirm} onPress={confirmFallback}><Text style={styles.importButtonText}>이 이름으로 추가</Text></Pressable><Pressable style={styles.fallbackCancel} onPress={cancelFallback}><Text style={styles.fallbackCancelText}>취소</Text></Pressable></View></View>}{candidates.length > 0 && <View style={styles.chipRow}>{candidates.map(c => <View key={c.id} style={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{c.title}</Text>{(c.source === "url" || c.source === "manual") && <Pressable onPress={() => removeCandidate(c.id)} hitSlop={8}><Text style={styles.chipRemove}>×</Text></Pressable>}</View>)}</View>}{participants.length > 1 && !voterDone && <Text style={styles.voterLabel}>{currentVoter} 차례</Text>}{voterDone && !allAnswered ? <View style={[styles.card, styles.completeCard]}><Text style={styles.cardTitle}>{currentVoter} 다 골랐어!</Text><Pressable style={styles.resultButton} onPress={nextVoter}><Text style={styles.resultButtonText}>다음: {participants[voterIndex + 1]} 차례 →</Text></Pressable></View> : current ? <Animated.View {...candidatePan.panHandlers} style={[styles.card, { transform: [{ translateX: cardX }, { rotate: cardX.interpolate({ inputRange: [-200, 0, 200], outputRange: ["-8deg", "0deg", "8deg"] }) }] }]}><Text style={styles.cardNumber}>후보 {currentIndex + 1}</Text><Text style={styles.cardTitle}>{current.title}</Text>{current.source === "memory" && <Text style={styles.memoryBadge}>우리 기억</Text>}<View style={styles.hint}><Text>← 별로</Text><Text>탭 · 괜찮아</Text><Text>좋아 →</Text></View></Animated.View> : <View style={[styles.card, styles.completeCard, styles.emptyCandidateCard]}><Svg pointerEvents="none" viewBox="0 0 100 100" preserveAspectRatio="none" style={styles.sketchBorder}><Path d="M4 3 C22 5 45 1 67 3 S91 2 97 4 C95 25 99 47 97 68 S99 92 96 97 C74 96 52 99 29 97 S7 99 3 96 C5 73 1 51 3 28 S2 8 4 3 Z" fill="none" stroke="#8a8375" strokeWidth="0.7"/></Svg><View style={[styles.paperTape, styles.paperTapeTop]}/><View style={[styles.paperTape, styles.paperTapeBottom]}/><Text style={[styles.cardTitle, styles.emptyCandidateTitle]}>{"오늘 후보를\n추가해 줘"}</Text><Text style={[styles.completeText, styles.emptyCandidateText]}>네이버 지도나 인스타그램, 캐치테이블 링크를 붙여넣어봐</Text></View>}{allAnswered && !showResult && <Pressable style={styles.resultButton} onPress={openResult}><Text style={styles.resultButtonText}>결과 보기</Text></Pressable>}{showResult && <View style={styles.resultBox}><Text style={styles.resultEyebrow}>오늘은 이 순서 어때?</Text>{ordered.map((c, i) => <View key={c.id} style={styles.resultRow}><Text style={[styles.rank, i === 0 && styles.topRank]}>{i + 1}</Text><View><Text style={styles.resultTitle}>{c.title}</Text><Text style={styles.resultReason}>{reason(c)}</Text></View></View>)}<Pressable style={[styles.resultButton, decided && styles.disabled]} disabled={decided} onPress={decide}><Text style={styles.resultButtonText}>{decided ? "결정했어 ✓" : `1위 ${ordered[0]?.title}로 결정하기 ✓`}</Text></Pressable>{decided && <Text style={styles.decision}>이걸로 가자! 다음엔 이 선택도 기억할게.</Text>}</View>}{learnIndex !== null && <View style={styles.learnBox}><Text style={styles.learnTitle}>다음엔 더 잘 골라줄게</Text><Text style={styles.learnText}>원하면 가볍게 넘겨줘.</Text>{learnIndex < learning.length ? <Animated.View {...learnPan.panHandlers} style={[styles.learnCard, { transform: [{ translateX: learnX }] }]}><Text style={styles.learnProgress}>{learnIndex + 1} / {learning.length}</Text><Text style={styles.learnName}>{learning[learnIndex]}</Text><Text style={styles.learnHint}>← 별로 · ↑ 진짜 좋아 · 좋아 →</Text></Animated.View> : <Text style={styles.decision}>기억했어. 다음 선택에 반영할게 ✨</Text>}{learnIndex < learning.length && <View style={styles.voteButtons}><Pressable onPress={() => remember(-2)} style={styles.voteButton}><Text>별로</Text></Pressable><Pressable onPress={() => remember(2)} style={styles.voteButton}><Text>진짜 좋아</Text></Pressable><Pressable onPress={() => remember(1)} style={styles.voteButton}><Text>좋아</Text></Pressable></View>}</View>}</ScrollView><View style={styles.homeBottom}><HomeButton onPress={() => setScreen("mode")} /></View></SafeAreaView>;
+return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={styles.matchPage}><View style={[styles.header, { justifyContent: "flex-end" }]}><InviteButton roomId={roomId} /></View><Text style={[styles.matchTitle, { textAlign: "center" }]}>혼자 뭐 하지?</Text><View style={[styles.candidatesHead, { justifyContent: "flex-end" }]}><Text style={styles.progress}>{answered}/{candidates.length}</Text></View><View style={styles.importRow}><TextInput value={importUrl} onChangeText={setImportUrl} autoCapitalize="none" autoCorrect={false} style={styles.importInput} /><Pressable style={styles.importButton} onPress={submitImportUrl}><Text style={styles.importButtonText}>추가</Text></Pressable></View>{importError && !fallback && <Text style={styles.importErrorText}>{importError}</Text>}{fallback && <View style={styles.fallbackBox}><Text style={styles.importErrorText}>{importError}</Text><TextInput value={fallback.title} onChangeText={title => setFallback(f => f ? { ...f, title } : f)} placeholder="장소 이름만 적어줘" placeholderTextColor="#a29e94" style={styles.fallbackInput} /><View style={styles.fallbackButtons}><Pressable style={styles.fallbackConfirm} onPress={confirmFallback}><Text style={styles.importButtonText}>이 이름으로 추가</Text></Pressable><Pressable style={styles.fallbackCancel} onPress={cancelFallback}><Text style={styles.fallbackCancelText}>취소</Text></Pressable></View></View>}{candidates.length > 0 && <View style={styles.chipRow}>{candidates.map(c => <View key={c.id} style={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{c.title}</Text>{(c.source === "url" || c.source === "manual") && <Pressable onPress={() => removeCandidate(c.id)} hitSlop={8}><Text style={styles.chipRemove}>×</Text></Pressable>}</View>)}</View>}{current ? <Animated.View {...candidatePan.panHandlers} style={[styles.card, { transform: [{ translateX: cardX }, { rotate: cardX.interpolate({ inputRange: [-200, 0, 200], outputRange: ["-8deg", "0deg", "8deg"] }) }] }]}><Text style={styles.cardNumber}>후보 {currentIndex + 1}</Text><Text style={styles.cardTitle}>{current.title}</Text>{current.source === "memory" && <Text style={styles.memoryBadge}>우리 기억</Text>}<View style={styles.hint}><Text>← 별로</Text><Text>탭 · 괜찮아</Text><Text>좋아 →</Text></View></Animated.View> : <View style={[styles.card, styles.completeCard, styles.emptyCandidateCard]}><Text style={[styles.cardTitle, styles.emptyCandidateTitle]}>오늘 후보를 추가해 줘</Text><Text style={[styles.completeText, styles.emptyCandidateText]}>네이버 지도나 캐치테이블 공유 내용을 붙여넣어봐</Text></View>}{allAnswered && !showResult && <Pressable style={styles.resultButton} onPress={openResult}><Text style={styles.resultButtonText}>결과 보기</Text></Pressable>}{showResult && <View style={styles.resultBox}><Text style={styles.resultEyebrow}>오늘은 이 순서 어때?</Text>{ordered.map((c, i) => <View key={c.id} style={styles.resultRow}><Text style={[styles.rank, i === 0 && styles.topRank]}>{i + 1}</Text><View><Text style={styles.resultTitle}>{c.title}</Text><Text style={styles.resultReason}>{reason(c)}</Text></View></View>)}<Pressable style={[styles.resultButton, decided && styles.disabled]} disabled={decided} onPress={decide}><Text style={styles.resultButtonText}>{decided ? "결정했어 ✓" : `1위 ${ordered[0]?.title}로 결정하기 ✓`}</Text></Pressable>{decided && <Text style={styles.decision}>이걸로 가자! 다음엔 이 선택도 기억할게.</Text>}</View>}{learnIndex !== null && <View style={styles.learnBox}><Text style={styles.learnTitle}>다음엔 더 잘 골라줄게</Text><Text style={styles.learnText}>원하면 가볍게 넘겨줘.</Text>{learnIndex < learning.length ? <Animated.View {...learnPan.panHandlers} style={[styles.learnCard, { transform: [{ translateX: learnX }] }]}><Text style={styles.learnProgress}>{learnIndex + 1} / {learning.length}</Text><Text style={styles.learnName}>{learning[learnIndex]}</Text><Text style={styles.learnHint}>← 별로 · ↑ 진짜 좋아 · 좋아 →</Text></Animated.View> : <Text style={styles.decision}>기억했어. 다음 선택에 반영할게 ✨</Text>}{learnIndex < learning.length && <View style={styles.voteButtons}><Pressable onPress={() => remember(-2)} style={styles.voteButton}><Text>별로</Text></Pressable><Pressable onPress={() => remember(2)} style={styles.voteButton}><Text>진짜 좋아</Text></Pressable><Pressable onPress={() => remember(1)} style={styles.voteButton}><Text>좋아</Text></Pressable></View>}</View>}</ScrollView><View style={styles.homeBottom}><HomeButton onPress={() => setScreen("start")} /></View></SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
-page: { flex: 1, backgroundColor: "#f4f0e6" }, modePage: { flex: 1, justifyContent: "space-between", paddingHorizontal: 24, paddingVertical: 32 }, modeTitleArea: { alignItems: "center", paddingTop: "12%" }, title: { fontFamily: "Gaegu_700Bold", fontSize: 48, color: ink, transform: [{ rotate: "-1deg" }] }, titleLine: { color: ink, fontSize: 16, marginTop: -14, opacity: 0.72 }, modeControlArea: { width: "100%", alignItems: "center" }, modeRail: { height: 96, width: "100%", position: "relative", justifyContent: "center" }, modeLine: { height: 2, backgroundColor: "#5d5a53", opacity: 0.7, width: "100%", transform: [{ rotate: "-0.3deg" }] }, modeHandle: { position: "absolute", left: 0, width: 96, height: 96, borderRadius: 50, borderWidth: 1.8, borderColor: ink, backgroundColor: "#faf8f1", alignItems: "center", justifyContent: "center", shadowColor: ink, shadowOffset: { width: 2, height: 3 }, shadowOpacity: 0.08, shadowRadius: 0, elevation: 2 }, modeHandleDots: { fontSize: 19, lineHeight: 18, color: "#767269", fontFamily: "Gaegu_700Bold" }, modeHandleText: { fontFamily: "Gaegu_700Bold", color: ink, fontSize: 22, marginTop: 2 }, modeDescription: { marginTop: 29, color: "#767269", fontSize: 17, textAlign: "center" }, modeFooter: { color: "#9a958a", fontSize: 17, textAlign: "center", paddingBottom: "7%" }, setupPage: { flex: 1, justifyContent: "center", padding: 20 }, back: { color: "#767269", fontSize: 18 }, paper: { marginTop: 22, padding: 24, borderWidth: 1.5, borderColor: ink, borderRadius: 24, backgroundColor: "#faf8f1" }, sectionTitle: { textAlign: "center", color: ink, fontFamily: "Gaegu_700Bold", fontSize: 33 }, inputLabel: { marginTop: 28, color: "#767269", fontFamily: "Gaegu_700Bold", fontSize: 18 }, input: { fontSize: 21, color: ink, borderBottomWidth: 1.5, borderBottomColor: "#68645c", paddingVertical: 8 }, situationGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 28 }, situation: { width: "47%", minHeight: 60, borderWidth: 1.2, borderColor: "#77736b", borderRadius: 20, justifyContent: "center", alignItems: "center" }, situationSelected: { borderWidth: 2.5, borderColor: ink }, situationText: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 23 }, matchPage: { paddingHorizontal: 24, paddingTop: 26, paddingBottom: 132 }, header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, invite: { borderWidth: 1, borderColor: "#77736b", paddingHorizontal: 13, paddingVertical: 7, borderRadius: 12, color: ink, fontFamily: "Gaegu_700Bold", fontSize: 16 }, matchTitle: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 39, marginTop: 34, marginBottom: 8 }, memoryNote: { marginTop: 10, borderWidth: 1, borderStyle: "dashed", borderColor: "#8d877a", borderRadius: 12, color: "#767269", padding: 11, fontSize: 16 }, candidatesHead: { marginTop: 30, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, candidatesTitle: { fontFamily: "Gaegu_700Bold", color: ink, fontSize: 23 }, progress: { color: "#767269", borderWidth: 1, borderColor: "#9e998d", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 2, fontFamily: "Gaegu_700Bold", fontSize: 16 }, card: { height: 320, borderWidth: 1.5, borderColor: ink, borderRadius: 2, backgroundColor: "#faf8f1", marginTop: 42, alignItems: "center", justifyContent: "center", padding: 20 }, cardNumber: { color: "#767269", fontSize: 20 }, cardTitle: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 40, marginTop: 7, textAlign: "center" }, memoryBadge: { marginTop: 10, paddingHorizontal: 10, paddingVertical: 2, borderWidth: 1, borderStyle: "dashed", borderColor: "#77736b", borderRadius: 12, color: "#625e56", fontSize: 16 }, hint: { position: "absolute", bottom: 19, left: 17, right: 17, flexDirection: "row", justifyContent: "space-between", color: "#767269" }, completeCard: { height: 270 }, completeText: { color: "#767269", fontFamily: "Gaegu_400Regular", fontSize: 19, lineHeight: 24, textAlign: "center", paddingHorizontal: 12, marginTop: 8 }, resultButton: { backgroundColor: ink, borderRadius: 13, padding: 14, alignItems: "center", marginTop: 20 }, resultButtonText: { color: "#faf8f1", fontFamily: "Gaegu_700Bold", fontSize: 21 }, resultBox: { borderWidth: 1.5, borderColor: ink, borderRadius: 24, backgroundColor: "#faf8f1", padding: 18, marginTop: 18 }, resultEyebrow: { fontFamily: "Gaegu_700Bold", fontSize: 29, color: ink, marginBottom: 8 }, resultRow: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#d8d2c5", paddingVertical: 11, gap: 12 }, rank: { color: ink, borderWidth: 1.2, borderColor: ink, borderRadius: 20, overflow: "hidden", width: 34, height: 34, textAlign: "center", paddingTop: 5, fontFamily: "Gaegu_700Bold", fontSize: 19 }, topRank: { backgroundColor: ink, color: "#faf8f1" }, resultTitle: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 23 }, resultReason: { color: "#767269", fontSize: 15 }, disabled: { opacity: 0.5 }, decision: { color: ink, fontFamily: "Gaegu_700Bold", textAlign: "center", marginTop: 14, fontSize: 18 }, learnBox: { marginTop: 20, borderWidth: 1.3, borderColor: ink, borderRadius: 24, backgroundColor: "#faf8f1", padding: 18 }, learnTitle: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 25 }, learnText: { color: "#767269", fontSize: 17 }, learnCard: { borderWidth: 1, borderColor: "#aaa397", borderRadius: 20, alignItems: "center", padding: 22, marginTop: 15, backgroundColor: "#f7f4eb" }, learnProgress: { color: "#767269", fontFamily: "Gaegu_700Bold" }, learnName: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 32, marginTop: 8 }, learnHint: { color: "#767269", marginTop: 18, fontSize: 14 }, voteButtons: { flexDirection: "row", gap: 8, marginTop: 10 }, voteButton: { flex: 1, paddingVertical: 10, alignItems: "center", borderWidth: 1, borderColor: "#77736b", borderRadius: 12 },
+page: { flex: 1, backgroundColor: "#f4f0e6" }, modePage: { flex: 1, justifyContent: "space-between", paddingHorizontal: 24, paddingVertical: 32 }, modeTitleArea: { alignItems: "center", paddingTop: "12%" }, title: { fontFamily: "Gaegu_700Bold", fontSize: 48, color: ink, transform: [{ rotate: "-1deg" }] }, titleLine: { color: ink, fontSize: 16, marginTop: -14, opacity: 0.72 }, modeControlArea: { width: "100%", alignItems: "stretch", paddingHorizontal: 6 }, matchPage: { paddingHorizontal: 24, paddingTop: 26, paddingBottom: 132 }, header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, invite: { borderWidth: 1, borderColor: "#77736b", paddingHorizontal: 13, paddingVertical: 7, borderRadius: 12, color: ink, fontFamily: "Gaegu_700Bold", fontSize: 16 }, matchTitle: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 39, marginTop: 34, marginBottom: 8 }, memoryNote: { marginTop: 10, borderWidth: 1, borderStyle: "dashed", borderColor: "#8d877a", borderRadius: 12, color: "#767269", padding: 11, fontSize: 16 }, candidatesHead: { marginTop: 30, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, candidatesTitle: { fontFamily: "Gaegu_700Bold", color: ink, fontSize: 23 }, progress: { color: "#767269", borderWidth: 1, borderColor: "#9e998d", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 2, fontFamily: "Gaegu_700Bold", fontSize: 16 }, card: { height: 320, borderWidth: 1.5, borderColor: ink, borderRadius: 2, backgroundColor: "#faf8f1", marginTop: 42, alignItems: "center", justifyContent: "center", padding: 20 }, cardNumber: { color: "#767269", fontSize: 20 }, cardTitle: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 40, marginTop: 7, textAlign: "center" }, memoryBadge: { marginTop: 10, paddingHorizontal: 10, paddingVertical: 2, borderWidth: 1, borderStyle: "dashed", borderColor: "#77736b", borderRadius: 12, color: "#625e56", fontSize: 16 }, hint: { position: "absolute", bottom: 19, left: 17, right: 17, flexDirection: "row", justifyContent: "space-between", color: "#767269" }, completeCard: { height: 270 }, completeText: { color: "#767269", fontFamily: "Gaegu_400Regular", fontSize: 19, lineHeight: 24, textAlign: "center", paddingHorizontal: 12, marginTop: 8 }, resultButton: { backgroundColor: ink, borderRadius: 13, padding: 14, alignItems: "center", marginTop: 20 }, resultButtonText: { color: "#faf8f1", fontFamily: "Gaegu_700Bold", fontSize: 21 }, resultBox: { borderWidth: 1.5, borderColor: ink, borderRadius: 24, backgroundColor: "#faf8f1", padding: 18, marginTop: 18 }, resultEyebrow: { fontFamily: "Gaegu_700Bold", fontSize: 29, color: ink, marginBottom: 8 }, resultRow: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#d8d2c5", paddingVertical: 11, gap: 12 }, rank: { color: ink, borderWidth: 1.2, borderColor: ink, borderRadius: 20, overflow: "hidden", width: 34, height: 34, textAlign: "center", paddingTop: 5, fontFamily: "Gaegu_700Bold", fontSize: 19 }, topRank: { backgroundColor: ink, color: "#faf8f1" }, resultTitle: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 23 }, resultReason: { color: "#767269", fontSize: 15 }, disabled: { opacity: 0.5 }, decision: { color: ink, fontFamily: "Gaegu_700Bold", textAlign: "center", marginTop: 14, fontSize: 18 }, learnBox: { marginTop: 20, borderWidth: 1.3, borderColor: ink, borderRadius: 24, backgroundColor: "#faf8f1", padding: 18 }, learnTitle: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 25 }, learnText: { color: "#767269", fontSize: 17 }, learnCard: { borderWidth: 1, borderColor: "#aaa397", borderRadius: 20, alignItems: "center", padding: 22, marginTop: 15, backgroundColor: "#f7f4eb" }, learnProgress: { color: "#767269", fontFamily: "Gaegu_700Bold" }, learnName: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 32, marginTop: 8 }, learnHint: { color: "#767269", marginTop: 18, fontSize: 14 }, voteButtons: { flexDirection: "row", gap: 8, marginTop: 10 }, voteButton: { flex: 1, paddingVertical: 10, alignItems: "center", borderWidth: 1, borderColor: "#77736b", borderRadius: 12 },
   titleUnderline: { width: "82%", marginTop: 1, height: 8, borderBottomWidth: 2, borderBottomColor: "#4c4943", borderRadius: 50, transform: [{ rotate: "-1deg" }], opacity: 0.72 },
-  modeCarousel: { alignItems: "center", gap: 14, paddingVertical: 12 },
-  carouselEdge: { width: 10 },
-  modeChoice: { width: 142, height: 174, borderWidth: 1.5, borderColor: "#706c63", borderRadius: 72, backgroundColor: "#faf8f1", alignItems: "center", justifyContent: "center", paddingHorizontal: 10 },
-  modeChoiceActive: { borderWidth: 2.5, borderColor: ink, backgroundColor: "#f9f6ed", shadowColor: ink, shadowOpacity: 0.12, shadowOffset: { width: 2, height: 3 }, shadowRadius: 0, elevation: 2 },
-  modeChoiceDots: { color: "#767269", fontFamily: "Gaegu_700Bold", fontSize: 22, lineHeight: 20 },
-  modeChoiceText: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 29, marginTop: 4 },
-  modeChoiceLabel: { color: "#767269", fontSize: 15, textAlign: "center", marginTop: 5 },
-  setupTopTitle: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 39, marginTop: 26 },
-  setupPageTop: { justifyContent: "flex-start", paddingTop: 12 },
-  setupPaperFixed: { minHeight: 300, justifyContent: "space-between" },
-  situationList: { flexDirection: "column", flexWrap: "nowrap", gap: 9 },
-  situationListItem: { width: "100%", minHeight: 76 },
-  customCandidateLabel: { marginTop: 20, color: "#767269", fontFamily: "Gaegu_700Bold", fontSize: 18 },
+  inputLabel: { marginTop: 0, color: "#767269", fontFamily: "Gaegu_700Bold", fontSize: 18 },
+  input: { fontSize: 21, color: ink, borderBottomWidth: 1.5, borderBottomColor: "#68645c", paddingVertical: 8, marginBottom: 8 },
   candidateStartButton: { marginTop: 26, minHeight: 72, borderRadius: 15, backgroundColor: ink, alignItems: "center", justifyContent: "center" },
   candidateStartText: { color: "#faf8f1", fontFamily: "Gaegu_700Bold", fontSize: 24 },
-  modeGrid: { width: "100%", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 14, paddingHorizontal: 8 },
-  modeGridChoice: { width: "47.5%", height: undefined, aspectRatio: 1, borderRadius: 23, alignItems: "center", justifyContent: "center" },
-  participantList: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 18 },
-  participantChip: { borderWidth: 1, borderColor: "#77736b", borderRadius: 18, paddingHorizontal: 13, paddingVertical: 6, backgroundColor: "#f4f0e6" },
-  participantChipText: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 18 },
+  togetherButton: { marginTop: 14, minHeight: 64, borderRadius: 15, borderWidth: 1.5, borderColor: ink, alignItems: "center", justifyContent: "center" },
+  togetherButtonText: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 22 },
   homeButton: { width: 92, height: 82, alignItems: "center", justifyContent: "flex-end", paddingBottom: 3 },
   homeBottom: { position: "absolute", left: 0, right: 0, bottom: 42, alignItems: "center" },
   homeArc: { position: "absolute", top: 0, width: 86, height: 43, borderTopWidth: 1.5, borderLeftWidth: 1.5, borderRightWidth: 1.5, borderColor: "#656159", borderTopLeftRadius: 43, borderTopRightRadius: 43, borderBottomWidth: 0, opacity: 0.78 },
   homeRoof: { position: "absolute", top: 35, width: 28, height: 28, borderTopWidth: 2.5, borderLeftWidth: 2.5, borderColor: ink, transform: [{ rotate: "45deg" }] },
   homeWall: { width: 25, height: 23, borderLeftWidth: 2.5, borderRightWidth: 2.5, borderBottomWidth: 2.5, borderColor: ink, alignItems: "center", justifyContent: "flex-end" },
   homeDoor: { width: 7, height: 11, borderWidth: 2, borderBottomWidth: 0, borderColor: ink },
-  emptyCandidateCard: { backgroundColor: "#fffefb", borderWidth: 0, overflow: "visible", transform: [{ rotate: "-0.4deg" }] },
-  sketchBorder: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 0 },
-  emptyCandidateTitle: { zIndex: 3 },
-  emptyCandidateText: { position: "relative", zIndex: 3 },
-  paperTape: { position: "absolute", width: 52, height: 16, backgroundColor: "#d9c9a5", opacity: 0.84, zIndex: 2 },
-  paperTapeTop: { top: -8, right: 25, transform: [{ rotate: "39deg" }] },
-  paperTapeBottom: { bottom: -8, left: 25, transform: [{ rotate: "39deg" }] },
+  emptyCandidateCard: { backgroundColor: "#fffefb", borderWidth: 1.5, borderColor: "#8a8375", borderStyle: "dashed", borderRadius: 18, overflow: "hidden", paddingHorizontal: 18 },
+  emptyCandidateTitle: { fontSize: 34, lineHeight: 42, marginTop: 0 },
+  emptyCandidateText: { marginTop: 12 },
   inviteButton: { flexDirection: "row", alignItems: "center", gap: 7, borderWidth: 1, borderColor: "#77736b", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12 },
   inviteLabel: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 16 },
   inviteSketch: { width: 19, height: 18, position: "relative" },
@@ -244,9 +314,4 @@ page: { flex: 1, backgroundColor: "#f4f0e6" }, modePage: { flex: 1, justifyConte
   chip: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "#77736b", borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: "#f4f0e6", maxWidth: 180 },
   chipText: { color: ink, fontSize: 14 },
   chipRemove: { color: "#767269", fontSize: 16, fontFamily: "Gaegu_700Bold" },
-  participantRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 14 },
-  participantTag: { borderWidth: 1, borderColor: "#9e998d", borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: "#f4f0e6" },
-  participantTagActive: { borderWidth: 2, borderColor: ink, backgroundColor: "#faf8f1" },
-  participantTagText: { color: ink, fontFamily: "Gaegu_700Bold", fontSize: 14 },
-  voterLabel: { marginTop: 18, color: "#767269", fontFamily: "Gaegu_700Bold", fontSize: 16, textAlign: "center" },
 });

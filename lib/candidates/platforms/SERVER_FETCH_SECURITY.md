@@ -69,9 +69,6 @@ with enough context to spot a scanning pattern, not just silently dropped.
 - No headless browser / JS execution — if a target page requires
   JS-rendering to expose its metadata, that page is out of scope rather
   than a reason to add a browser sandbox here.
-- Instagram is explicitly out of scope (no official API for this use case;
-  see project instruction not to build scraping workarounds for platforms
-  without one).
 
 ## Where this plugs in
 

@@ -32,8 +32,7 @@ export async function createCandidateFromUrl(
   const platform = detectPlatform(url);
 
   if (platform === "unknown") {
-    // No adapter recognizes this URL (includes Instagram links today,
-    // since that adapter isn't implemented yet). Modeled as data: still
+    // No adapter recognizes this URL. Modeled as data: still
     // produces a valid Candidate with title/sourcePlatform/sourceUrl.
     // errorType is "unsupported_platform" for a well-formed URL we just
     // don't support, or "invalid_url" if the string wasn't a URL at all --

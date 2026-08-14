@@ -5,7 +5,7 @@ import { catchtableAdapter } from "./adapters/catchtableAdapter";
 /**
  * Ordered list of supported platform adapters.
  *
- * To add a new platform (e.g. Instagram, not yet implemented): write an
+ * To add a new platform: write an
  * adapter that satisfies PlatformAdapter and add it here. Nothing in
  * detectPlatform, createCandidateFromUrl, session, or UI needs to change.
  */
